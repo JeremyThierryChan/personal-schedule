@@ -101,7 +101,8 @@ function place(el: HTMLElement, top: number, height: number, left?: number, widt
 function renderBlock(block: PositionedBlock, authorized: boolean, mode: 'day' | 'week'): HTMLElement {
   const card = make(
     'div',
-    'absolute z-10 overflow-hidden rounded-md border border-rose-300 bg-rose-100 px-1.5 py-0.5 shadow-sm',
+    // 手机上列很窄，内边距收窄一点，让标题多显示一两个字
+    'absolute z-10 overflow-hidden rounded-md border border-rose-300 bg-rose-100 px-1 py-0.5 shadow-sm sm:px-1.5',
   );
   place(card, block.top, block.height, block.left, block.width);
   card.style.minHeight = '17px';
@@ -173,10 +174,8 @@ function renderTimeGrid(
   const multi = days.length > 1;
   const marks = hourMarks(range);
 
-  // 周视图在手机上放不下 7 列，只允许横向滚动；纵向一定不滚动
-  const scroller = make('div', multi ? '-mx-1 overflow-x-auto overflow-y-hidden px-1' : '');
-  const inner = make('div', multi ? 'min-w-[620px]' : '');
-  scroller.appendChild(inner);
+  // 不套任何滚动容器：列宽永远按可用宽度平分，卡片里不会出现滑动条
+  const inner = make('div', '');
 
   // ---- 表头（只有周视图需要，日视图的日期在导航栏里）----
   if (multi) {
@@ -265,7 +264,7 @@ function renderTimeGrid(
         freeBox.appendChild(
           make(
             'div',
-            'truncate px-1.5 pt-0.5 text-[10px] font-medium text-emerald-700/90',
+            'truncate px-1 pt-0.5 text-[10px] font-medium text-emerald-700/90 sm:px-1.5',
             `空闲 ${formatDuration(minutes)}`,
           ),
         );
@@ -305,7 +304,7 @@ function renderTimeGrid(
 
   grid.appendChild(body);
   inner.appendChild(grid);
-  return scroller;
+  return inner;
 }
 
 /* ================= 月视图 ================= */
