@@ -252,26 +252,34 @@ export function totalMinutes(slots: Slot[]): number {
   return slots.reduce((sum, s) => sum + (parseTime(s.end) - parseTime(s.start)), 0);
 }
 
+/**
+ * 分钟 -> 小时，保留一位小数。
+ * 先四舍五入再判断，才不会出现 "24.0 小时" / "3.0 小时" 这种尾巴
+ * （一天的跨度是 23:59 = 1439 分钟，最容易碰到的就是这种值）。
+ */
+function roundHours(minutes: number): number {
+  return Math.round((minutes / 60) * 10) / 10;
+}
+
 /** 把分钟数显示成 "5.5 小时" / "45 分钟" */
 export function formatDuration(minutes: number): string {
   if (minutes <= 0) return '0 分钟';
-  const hours = minutes / 60;
+  const hours = roundHours(minutes);
   if (hours >= 1) return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} 小时`;
   return `${minutes} 分钟`;
 }
 
-/** 只取小时数、不带单位：570 -> "9.5"，900 -> "15"（月视图格子窄，用这个） */
+/** 只取小时数、不带单位：570 -> "9.5"，1439 -> "24"（月视图格子窄，用这个） */
 export function formatHours(minutes: number): string {
-  const hours = minutes / 60;
+  const hours = roundHours(minutes);
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
 
 /**
- * 算出时间轴范围：默认 08:00–23:00；
- * 数据里如果有更早/更晚的安排（例如从 .ics 导入的凌晨日程），
- * 就自动扩到整点，保证不会把安排裁掉。
+ * 算出时间轴范围。默认就是完整的一天：00:00 – 23:59。
+ * 万一数据里真有超出这个范围的安排，会自动扩到整点，保证不会把安排裁掉。
  */
-export function computeRange(entries: BusyEntry[], fallback: DayRange = { start: '08:00', end: '23:00' }): DayRange {
+export function computeRange(entries: BusyEntry[], fallback: DayRange = { start: '00:00', end: '23:59' }): DayRange {
   let start = parseTime(fallback.start);
   let end = parseTime(fallback.end);
   for (const entry of entries) {
@@ -406,6 +414,11 @@ export function hourMarks(range: DayRange): { time: string; top: number }[] {
   const marks: { time: string; top: number }[] = [];
   for (let m = first; m <= end; m += 60) {
     marks.push({ time: formatTime(m), top: ((m - start) / total) * 100 });
+  }
+  // 末尾不落在整点时（例如 00:00–23:59）也补一个刻度，底部才不会空一块没标记
+  const last = marks[marks.length - 1];
+  if (!last || last.time !== range.end) {
+    marks.push({ time: range.end, top: 100 });
   }
   return marks;
 }

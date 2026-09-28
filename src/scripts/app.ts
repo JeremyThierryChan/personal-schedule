@@ -47,11 +47,12 @@ type View = 'day' | 'week' | 'month';
 const STORAGE_KEY = 'personal-schedule:name';
 
 /**
- * 时间轴容器高度：15 小时（08:00–23:00）按比例铺开。
- * 手机 860px ≈ 每小时 57px，桌面 1000px ≈ 每小时 67px，方块里放得下字。
+ * 时间轴容器高度：一整天 24 小时（00:00–23:59）按比例铺开。
+ * 手机 940px ≈ 每小时 39px，桌面 1100px ≈ 每小时 46px —— 和之前 22 小时版本
+ * 每小时的像素高度基本一致，换成全天以后方块不会变小。
  * 高度固定，所以内部不会出现纵向滚动条（要滚动就滚整个页面）。
  */
-const GRID_HEIGHT = 'h-[860px] sm:h-[1000px]';
+const GRID_HEIGHT = 'h-[940px] sm:h-[1100px]';
 
 /**
  * 周视图表头高度。左边时间轴要留出同样高度的空位，
@@ -198,8 +199,10 @@ function renderTimeGrid(
     );
     label.style.top = `${mark.top}%`;
     label.dataset.hourLabel = '1';
-    // 手机上隔一小时显示一个刻度，免得挤在一起
-    if (Number(mark.time.slice(0, 2)) % 2 !== 0) label.classList.add('hidden', 'sm:block');
+    // 手机上隔一小时显示一个刻度，免得挤在一起；最后一个（23:59）例外，它是结束标记
+    if (Number(mark.time.slice(0, 2)) % 2 !== 0 && i !== marks.length - 1) {
+      label.classList.add('hidden', 'sm:block');
+    }
     gutterMarks.appendChild(label);
   }
   gutter.appendChild(gutterMarks);

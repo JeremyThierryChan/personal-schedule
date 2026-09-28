@@ -26,8 +26,9 @@ const TZ_OFFSET_MINUTES = 8 * 60;
 const MAX_OCCURRENCES = 400;
 /** 无限重复的事件最多展开多少天 */
 const HORIZON_DAYS = 365;
-/** 默认的一天范围，超出范围的安排会在报告里标出来 */
-const DEFAULT_RANGE = { start: '08:00', end: '23:00' };
+/** 时间轴是完整的一天，所以只提醒「凌晨」这种可能是填错的时间 */
+const EARLY_HOUR = '06:00';
+const LATE_HOUR = '23:00';
 
 const DAY_MINUTES = 24 * 60;
 const pad = (n) => String(n).padStart(2, '0');
@@ -312,13 +313,13 @@ function main() {
   console.log(`✓ 覆盖日期：${dates[0]} → ${dates[dates.length - 1]}（共 ${dates.length} 天有安排）`);
   console.log(`✓ 已写入 ${OUT_FILE.replace(ROOT + '/', '')}`);
 
-  const outside = unique.filter(
-    (e) => e.start < DEFAULT_RANGE.start || (e.end > DEFAULT_RANGE.end && e.end !== '00:00'),
-  );
-  if (outside.length) {
-    console.log(`\n⚠️  有 ${outside.length} 条不在默认范围 ${DEFAULT_RANGE.start}–${DEFAULT_RANGE.end} 内，时间轴会自动扩展以容纳它们：`);
-    for (const e of outside.slice(0, 10)) console.log(`     ${e.date} ${e.start}–${e.end}  ${e.title}`);
-    if (outside.length > 10) console.log(`     …还有 ${outside.length - 10} 条`);
+  // 时间轴是完整的一天，不会有「超出范围」的问题了；
+  // 但凌晨 / 深夜的安排很可能是日历里填错了，提醒一下
+  const odd = unique.filter((e) => e.start < EARLY_HOUR || e.start > LATE_HOUR);
+  if (odd.length) {
+    console.log(`\n⚠️  有 ${odd.length} 条在凌晨（早于 ${EARLY_HOUR}）或深夜（晚于 ${LATE_HOUR}），确认一下是不是填错了：`);
+    for (const e of odd.slice(0, 10)) console.log(`     ${e.date} ${e.start}–${e.end}  ${e.title}`);
+    if (odd.length > 10) console.log(`     …还有 ${odd.length - 10} 条`);
   }
   if (warnings.length) {
     console.log(`\n⚠️  提示：`);
