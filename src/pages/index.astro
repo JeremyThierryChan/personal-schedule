@@ -110,20 +110,30 @@ const appData = JSON.stringify({
         </div>
       </section>
 
-      <!-- 时间线：打开页面就能看到 -->
+      <!-- 时间表：打开页面就能看到 -->
       <section id="result">
+        <!-- 视图切换 -->
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <div class="inline-flex rounded-xl bg-slate-100 p-1">
+            <button data-view="day" type="button" class="rounded-lg px-4 py-1.5 text-sm font-medium">日</button>
+            <button data-view="week" type="button" class="rounded-lg px-4 py-1.5 text-sm font-medium">周</button>
+            <button data-view="month" type="button" class="rounded-lg px-4 py-1.5 text-sm font-medium">月</button>
+          </div>
+          <span class="text-xs text-slate-400">忙碌 / 空闲 自动计算</span>
+        </div>
+
         <!-- 日期切换 -->
-        <div class="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+        <div class="mb-3 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
           <button
             id="prev-day"
             type="button"
             aria-label="前一天"
             class="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
           >
-            ←<span class="ml-1 hidden sm:inline">前一天</span>
+            ←
           </button>
 
-          <div class="flex min-w-0 flex-col items-center">
+          <div id="nav-day" class="flex min-w-0 flex-col items-center">
             <input
               id="date-picker"
               type="date"
@@ -133,13 +143,18 @@ const appData = JSON.stringify({
             <span id="date-label" class="mt-0.5 text-xs text-slate-400"></span>
           </div>
 
+          <div id="nav-range" hidden class="flex min-w-0 flex-col items-center">
+            <span id="range-label" class="font-mono text-sm tabular-nums text-slate-900"></span>
+            <span id="range-sub" class="mt-0.5 text-center text-xs text-slate-400"></span>
+          </div>
+
           <button
             id="next-day"
             type="button"
             aria-label="后一天"
             class="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
           >
-            <span class="mr-1 hidden sm:inline">后一天</span>→
+            →
           </button>
         </div>
 
@@ -147,14 +162,32 @@ const appData = JSON.stringify({
           id="today-button"
           type="button"
           hidden
-          class="mb-4 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100"
+          class="mb-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100"
         >
           回到今天
         </button>
 
         <p id="notice" class="hidden"></p>
 
+        <!-- 日视图 -->
         <ul id="timeline" class="space-y-2"></ul>
+
+        <!-- 周视图 -->
+        <div id="week-view" hidden class="space-y-2"></div>
+
+        <!-- 月视图 -->
+        <div id="month-view" hidden class="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3">
+          <div class="mb-1 grid grid-cols-7 gap-1">
+            <span class="py-1 text-center text-[10px] font-medium text-slate-400 sm:text-xs">一</span>
+            <span class="py-1 text-center text-[10px] font-medium text-slate-400 sm:text-xs">二</span>
+            <span class="py-1 text-center text-[10px] font-medium text-slate-400 sm:text-xs">三</span>
+            <span class="py-1 text-center text-[10px] font-medium text-slate-400 sm:text-xs">四</span>
+            <span class="py-1 text-center text-[10px] font-medium text-slate-400 sm:text-xs">五</span>
+            <span class="py-1 text-center text-[10px] font-medium text-slate-400 sm:text-xs">六</span>
+            <span class="py-1 text-center text-[10px] font-medium text-slate-400 sm:text-xs">日</span>
+          </div>
+          <div id="month-grid" class="grid grid-cols-7 gap-1"></div>
+        </div>
       </section>
 
       <footer class="mt-10 border-t border-slate-200 pt-4 text-xs leading-relaxed text-slate-400">

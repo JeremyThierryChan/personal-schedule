@@ -146,6 +146,85 @@ export function shiftDateKey(key: string, days: number): string {
 
 /** 显示用的日期，例如 2026-09-28 周一 */
 export function formatDateLabel(key: string): string {
-  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  return `${key} ${weekdays[parseDateKey(key).getDay()]}`;
+  return `${key} ${weekdayName(key)}`;
+}
+
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+/** 只要星期，例如 周一 */
+export function weekdayName(key: string): string {
+  return WEEKDAYS[parseDateKey(key).getDay()]!;
+}
+
+/* ---------- 周视图 / 月视图用的辅助函数 ---------- */
+
+/** 该日期所在周的周一（周一为一周的第一天） */
+export function startOfWeek(key: string): string {
+  const day = parseDateKey(key).getDay(); // 0 = 周日
+  return shiftDateKey(key, day === 0 ? -6 : 1 - day);
+}
+
+/** 该日期所在周的 7 天（周一 -> 周日） */
+export function weekDates(anchor: string): string[] {
+  const start = startOfWeek(anchor);
+  return Array.from({ length: 7 }, (_, i) => shiftDateKey(start, i));
+}
+
+/** 月份加减，例如 addMonths('2026-01-31', 1) -> '2026-02-28' */
+export function addMonths(key: string, delta: number): string {
+  const [y, m, d] = key.split('-').map(Number);
+  const target = new Date(y!, m! - 1 + delta, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(d!, lastDay));
+  return formatDateKey(target);
+}
+
+/** "2026-09-28" -> "2026-09" */
+export function monthKey(key: string): string {
+  return key.slice(0, 7);
+}
+
+/** 月视图的 6×7 网格（周一开始），inMonth 表示是否属于当月 */
+export function monthGrid(anchor: string): { date: string; inMonth: boolean }[] {
+  const current = monthKey(anchor);
+  const start = startOfWeek(`${current}-01`);
+  return Array.from({ length: 42 }, (_, i) => {
+    const date = shiftDateKey(start, i);
+    return { date, inMonth: monthKey(date) === current };
+  });
+}
+
+/** 导航栏上的标题：周视图显示范围，月视图显示月份 */
+export function formatWeekLabel(anchor: string): string {
+  const days = weekDates(anchor);
+  const from = days[0]!;
+  const to = days[6]!;
+  return `${from.slice(5)} – ${to.slice(5)}`;
+}
+
+/** "2026-09-28" -> "2026年9月" */
+export function formatMonthLabel(anchor: string): string {
+  const [y, m] = anchor.split('-').map(Number);
+  return `${y}年${m}月`;
+}
+
+/** 把一组时间线拆成忙碌段和空闲段 */
+export function splitSlots(slots: Slot[]): { busy: Slot[]; free: Slot[] } {
+  return {
+    busy: slots.filter((s) => s.busy),
+    free: slots.filter((s) => !s.busy),
+  };
+}
+
+/** 计算总时长（分钟） */
+export function totalMinutes(slots: Slot[]): number {
+  return slots.reduce((sum, s) => sum + (parseTime(s.end) - parseTime(s.start)), 0);
+}
+
+/** 把分钟数显示成 "5.5 小时" / "45 分钟" */
+export function formatDuration(minutes: number): string {
+  if (minutes <= 0) return '0 分钟';
+  const hours = minutes / 60;
+  if (hours >= 1) return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} 小时`;
+  return `${minutes} 分钟`;
 }
