@@ -10,6 +10,8 @@
 import { resolveLevel, type Visitor } from '../lib/access';
 import {
   addMonths,
+  beijingMinutesOfDay,
+  beijingTodayKey,
   blockSummary,
   buildTimeline,
   formatDateLabel,
@@ -27,7 +29,6 @@ import {
   shiftDateKey,
   splitSlots,
   timePercent,
-  todayKey,
   weekDates,
   weekdayName,
   type BusyEntry,
@@ -51,6 +52,12 @@ const STORAGE_KEY = 'personal-schedule:name';
  * 高度固定，所以内部不会出现纵向滚动条（要滚动就滚整个页面）。
  */
 const GRID_HEIGHT = 'h-[860px] sm:h-[1000px]';
+
+/**
+ * 周视图表头高度。左边时间轴要留出同样高度的空位，
+ * 两边才能对齐 —— 所以这里用固定高度，而不是靠内边距撑。
+ */
+const HEAD_HEIGHT = 'h-9';
 
 /** 从 <script id="app-data"> 里读取数据 */
 function readData(): AppData | null {
@@ -174,43 +181,13 @@ function renderTimeGrid(
   const multi = days.length > 1;
   const marks = hourMarks(range);
 
-  // 不套任何滚动容器：列宽永远按可用宽度平分，卡片里不会出现滑动条
-  const inner = make('div', '');
+  // 外层：左边固定时间轴，右边是可横向滑动的日期列
+  const outer = make('div', 'flex');
 
-  // ---- 表头（只有周视图需要，日视图的日期在导航栏里）----
-  if (multi) {
-    const head = make('div', 'flex items-end');
-    head.appendChild(make('div', 'w-10 shrink-0 sm:w-12'));
-    const headRow = make('div', 'flex flex-1');
-    for (const d of days) {
-      const isToday = d === today;
-      const btn = make(
-        'button',
-        `flex-1 rounded-t-lg border-b-2 px-1 pb-1.5 pt-1 text-center transition-colors hover:bg-slate-50 ${
-          isToday ? 'border-rose-400' : 'border-transparent'
-        }`,
-      );
-      btn.type = 'button';
-      btn.dataset.date = d;
-      btn.appendChild(make('div', 'text-[10px] text-slate-400 sm:text-xs', weekdayName(d)));
-      btn.appendChild(
-        make(
-          'div',
-          `text-xs font-semibold sm:text-sm ${isToday ? 'text-rose-600' : 'text-slate-900'}`,
-          `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`,
-        ),
-      );
-      headRow.appendChild(btn);
-    }
-    head.appendChild(headRow);
-    inner.appendChild(head);
-  }
-
-  // ---- 网格主体 ----
-  const grid = make('div', `flex ${GRID_HEIGHT}`);
-
-  // 左侧时间刻度
-  const gutter = make('div', 'relative w-10 shrink-0 sm:w-12');
+  /* ---- 左：时间刻度（横向滑动时保持不动，随时能看到时间参照）---- */
+  const gutter = make('div', 'flex w-10 shrink-0 flex-col sm:w-12');
+  if (multi) gutter.appendChild(make('div', HEAD_HEIGHT)); // 和右边表头对齐的空位
+  const gutterMarks = make('div', 'relative flex-1');
   for (const [i, mark] of marks.entries()) {
     // 首尾两个刻度不能做成「上下居中」，否则会超出容器、撑出滚动条
     const align = i === 0 ? '' : i === marks.length - 1 ? '-translate-y-full' : '-translate-y-1/2';
@@ -223,12 +200,53 @@ function renderTimeGrid(
     label.dataset.hourLabel = '1';
     // 手机上隔一小时显示一个刻度，免得挤在一起
     if (Number(mark.time.slice(0, 2)) % 2 !== 0) label.classList.add('hidden', 'sm:block');
-    gutter.appendChild(label);
+    gutterMarks.appendChild(label);
   }
-  grid.appendChild(gutter);
+  gutter.appendChild(gutterMarks);
+  outer.appendChild(gutter);
 
-  // 右侧：所有列共用的容器
-  const body = make('div', 'relative flex flex-1 border-t border-slate-100');
+  /* ---- 右：日期列 ----
+   * 手机：每列占屏幕 1/3（一屏正好 3 天），7 列总宽 7/3 = 233.333%，可以左右滑
+   * 桌面：7 列平分宽度，全部铺满，不滚动、没有滑块
+   */
+  const scroller = make(
+    'div',
+    multi
+      ? 'min-w-0 flex-1 overflow-x-auto overflow-y-hidden sm:overflow-visible'
+      : 'min-w-0 flex-1',
+  );
+  const columns = make('div', `flex flex-col ${multi ? 'w-[233.333%] sm:w-full' : 'w-full'}`);
+  scroller.appendChild(columns);
+  outer.appendChild(scroller);
+
+  // ---- 表头（只有周视图需要，日视图的日期在导航栏里）----
+  if (multi) {
+    const headRow = make('div', `flex shrink-0 items-center ${HEAD_HEIGHT}`);
+    for (const d of days) {
+      const isToday = d === today;
+      const btn = make(
+        'button',
+        `flex h-full min-w-0 flex-1 flex-col items-center justify-center border-b-2 transition-colors hover:bg-slate-50 ${
+          isToday ? 'border-rose-400' : 'border-transparent'
+        }`,
+      );
+      btn.type = 'button';
+      btn.dataset.date = d;
+      btn.appendChild(make('div', 'text-[10px] leading-none text-slate-400 sm:text-xs', weekdayName(d)));
+      btn.appendChild(
+        make(
+          'div',
+          `mt-0.5 text-xs font-semibold leading-none sm:text-sm ${isToday ? 'text-rose-600' : 'text-slate-900'}`,
+          `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`,
+        ),
+      );
+      headRow.appendChild(btn);
+    }
+    columns.appendChild(headRow);
+  }
+
+  // ---- 网格主体 ----
+  const body = make('div', `relative flex ${GRID_HEIGHT}`);
 
   // 整点横线
   for (const mark of marks) {
@@ -287,7 +305,7 @@ function renderTimeGrid(
       col.appendChild(renderBlock(block, authorized, multi ? 'week' : 'day'));
     }
 
-    // 3) 今天：一条「现在」的红线
+    // 3) 今天：一条「现在」的红线（按北京时间算）
     if (isToday) {
       const pos = nowPosition(range);
       if (pos !== null) {
@@ -302,9 +320,8 @@ function renderTimeGrid(
     body.appendChild(col);
   }
 
-  grid.appendChild(body);
-  inner.appendChild(grid);
-  return inner;
+  columns.appendChild(body);
+  return outer;
 }
 
 /* ================= 月视图 ================= */
@@ -398,7 +415,8 @@ export function initApp(): void {
   }
 
   const app = data;
-  const today = todayKey();
+  /** 「今天」按北京时间算：日程数据是北京时间的，不能跟着访客本机时区跑 */
+  const today = beijingTodayKey();
   /** 默认打开周视图 */
   let view: View = 'week';
   let date = today;

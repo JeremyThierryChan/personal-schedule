@@ -3,14 +3,15 @@ import '../styles/global.css';
 import scheduleData from '../data/schedule.json';
 import visitorsData from '../data/visitors.json';
 import contactData from '../data/contact.json';
-import { computeRange, formatDateLabel, todayKey, type BusyEntry } from '../lib/schedule';
+import { beijingTodayKey, computeRange, formatDateLabel, type BusyEntry } from '../lib/schedule';
 import type { Visitor } from '../lib/access';
 
 // 一天的范围：默认 08:00–23:00，若数据里有更早/更晚的安排会自动扩展（不会裁掉）
 const schedule = scheduleData as BusyEntry[];
 const range = computeRange(schedule);
 
-const today = todayKey();
+// 日程数据是北京时间的，所以「今天」也用北京时间（页面加载后由浏览器端再算一次）
+const today = beijingTodayKey();
 
 // 预约联系方式：改 src/data/contact.json
 const contact = contactData;
@@ -46,6 +47,7 @@ const appData = JSON.stringify({
           <h1 class="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Personal Schedule</h1>
           <p class="mt-1 text-sm text-slate-500">
             今天是 <span id="today-line" class="font-medium text-slate-700">{formatDateLabel(today)}</span>
+            <span class="ml-1 text-slate-400">· 北京时间</span>
           </p>
         </div>
       </header>

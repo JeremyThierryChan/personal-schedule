@@ -126,9 +126,34 @@ export function formatDateKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** 今天的日期 key */
+/** 今天的日期 key（按访客本机时区） */
 export function todayKey(): string {
   return formatDateKey(new Date());
+}
+
+/*
+ * 日程数据是按「北京时间」存的（Apple 日历导出的 TZID=Asia/Shanghai）。
+ * 所以「今天」和「现在红线」都必须按北京时间算，
+ * 否则国外访客会看到红线画错位置、甚至算成另一天。
+ * 中国自 1991 年后没有夏令时，固定 UTC+8，用 UTC getter 读偏移后的时间即可，不需要任何库。
+ */
+const BEIJING_OFFSET_MINUTES = 8 * 60;
+
+/** 把时间戳挪到北京时区，之后用 getUTC* 读出来的就是北京时间 */
+function toBeijing(now: Date): Date {
+  return new Date(now.getTime() + BEIJING_OFFSET_MINUTES * 60_000);
+}
+
+/** 北京时间的今天，例如 "2026-09-28" */
+export function beijingTodayKey(now: Date = new Date()): string {
+  const d = toBeijing(now);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+/** 北京时间现在是几点（从 0 点算起的分钟数），例如 18:30 -> 1110 */
+export function beijingMinutesOfDay(now: Date = new Date()): number {
+  const d = toBeijing(now);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
 }
 
 /** "2026-09-28" -> Date（本地时间当天 0 点） */
@@ -385,11 +410,13 @@ export function hourMarks(range: DayRange): { time: string; top: number }[] {
   return marks;
 }
 
-/** 当前时间在时间轴上的位置（0-100），不在今天的范围内就返回 null */
-export function nowPosition(range: DayRange, now: Date = new Date()): number | null {
-  const minutes = now.getHours() * 60 + now.getMinutes();
+/**
+ * 「现在」红线在时间轴上的位置（0-100），不在当天范围内就返回 null。
+ * minutesOfDay 必须是**北京时间**的分钟数，用 beijingMinutesOfDay() 拿。
+ */
+export function nowPosition(range: DayRange, minutesOfDay: number = beijingMinutesOfDay()): number | null {
   const start = parseTime(range.start);
   const end = parseTime(range.end);
-  if (minutes < start || minutes > end) return null;
-  return ((minutes - start) / (end - start)) * 100;
+  if (minutesOfDay < start || minutesOfDay > end) return null;
+  return ((minutesOfDay - start) / (end - start)) * 100;
 }
