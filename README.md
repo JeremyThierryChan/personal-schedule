@@ -83,17 +83,14 @@ npm run preview    # 本地预览构建结果
 
 ## 4. 部署到 GitHub Pages
 
-### 第一次（只需要做一次）
+### 第一次
 
-1. 在 GitHub 上创建仓库 `personal--schedule`（仓库名必须一致，因为构建用的子路径是 `/personal--schedule`）。
+这个仓库已经配置好了：代码已推送，GitHub Pages 的 **Source 已设为 GitHub Actions**。
+
+如果以后换了仓库，手动做两件事：
+
+1. 新建仓库，仓库名要和 `.github/workflows/deploy.yml` 里的 `BASE_PATH` 一致（当前是 `/personal--schedule`）。
 2. 打开仓库 **Settings → Pages → Build and deployment → Source**，选择 **GitHub Actions**。
-3. 推送代码：
-
-```bash
-git add .
-git commit -m "update schedule"
-git push
-```
 
 ### 之后更新网站（平时只需要这三行）
 
