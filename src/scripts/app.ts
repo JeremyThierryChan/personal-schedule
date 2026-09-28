@@ -399,7 +399,8 @@ export function initApp(): void {
 
   const app = data;
   const today = todayKey();
-  let view: View = 'day';
+  /** 默认打开周视图 */
+  let view: View = 'week';
   let date = today;
   let formOpen = false;
   let name = '';
@@ -634,9 +635,29 @@ export function initApp(): void {
     renderContent();
   });
 
+  // 「预约我的时间」里的复制按钮（电话 / 微信号）
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
+    button.addEventListener('click', async () => {
+      const original = button.textContent;
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy ?? '');
+        ok = true;
+      } catch {
+        ok = false; // 非 https 或老浏览器：让用户手动选中
+      }
+      button.textContent = ok ? '已复制 ✓' : '请手动复制';
+      if (ok) button.classList.add('text-emerald-600');
+      window.setTimeout(() => {
+        button.textContent = original;
+        button.classList.remove('text-emerald-600');
+      }, 1600);
+    });
+  }
+
   render();
 
-  // 每分钟挪一下「现在」红线（只改位置、不重画，免得周视图的横向滚动跳回去）
+  // 每分钟挪一下「现在」红线（只改位置、不重画，免得滚动位置跳回去）
   window.setInterval(() => {
     const pos = nowPosition(app.range);
     for (const el of document.querySelectorAll<HTMLElement>('[data-now-line]')) {

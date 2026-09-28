@@ -2,6 +2,7 @@
 import '../styles/global.css';
 import scheduleData from '../data/schedule.json';
 import visitorsData from '../data/visitors.json';
+import contactData from '../data/contact.json';
 import { computeRange, formatDateLabel, todayKey, type BusyEntry } from '../lib/schedule';
 import type { Visitor } from '../lib/access';
 
@@ -10,6 +11,13 @@ const schedule = scheduleData as BusyEntry[];
 const range = computeRange(schedule);
 
 const today = todayKey();
+
+// 预约联系方式：改 src/data/contact.json
+const contact = contactData;
+const hasPrices = Array.isArray(contact.prices) && contact.prices.length > 0;
+if (contact.phone.includes('0000') || contact.wechat.includes('你的')) {
+  console.warn('⚠️ src/data/contact.json 里还是占位内容，记得填上真实的电话和微信号');
+}
 
 // 把数据内嵌进页面，交给浏览器端渲染（静态站点，没有后端）
 const appData = JSON.stringify({
@@ -113,6 +121,103 @@ const appData = JSON.stringify({
           </button>
         </div>
       </section>
+
+      <!-- 预约我的时间：原生 <details>，不需要 JS -->
+      <details
+        id="booking"
+        class="group mb-5 overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/70 shadow-sm"
+      >
+        <summary
+          class="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 transition-colors hover:bg-emerald-100/70 [&::-webkit-details-marker]:hidden"
+        >
+          <span class="flex items-center gap-2 text-sm font-semibold text-emerald-800 sm:text-base">
+            📅 {contact.heading}
+          </span>
+          <span class="shrink-0 text-xs text-emerald-600">
+            <span class="group-open:hidden">展开 ▾</span>
+            <span class="hidden group-open:inline">收起 ▴</span>
+          </span>
+        </summary>
+
+        <div class="border-t border-emerald-200 bg-white px-4 py-4">
+          {contact.intro && <p class="text-sm text-slate-600">{contact.intro}</p>}
+
+          <!-- 联系方式 -->
+          <div class="mt-3 divide-y divide-slate-100 border-y border-slate-100">
+            {
+              contact.phone && (
+                <div class="flex items-center justify-between gap-3 py-2.5">
+                  <div class="min-w-0">
+                    <div class="text-xs text-slate-400">电话</div>
+                    <a
+                      href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`}
+                      class="font-mono text-sm font-medium text-slate-900 tabular-nums underline decoration-dotted underline-offset-4"
+                    >
+                      {contact.phone}
+                    </a>
+                  </div>
+                  <button
+                    type="button"
+                    data-copy={contact.phone}
+                    class="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-slate-100"
+                  >
+                    复制
+                  </button>
+                </div>
+              )
+            }
+            {
+              contact.wechat && (
+                <div class="flex items-center justify-between gap-3 py-2.5">
+                  <div class="min-w-0">
+                    <div class="text-xs text-slate-400">微信</div>
+                    <div class="truncate font-mono text-sm font-medium text-slate-900">{contact.wechat}</div>
+                  </div>
+                  <button
+                    type="button"
+                    data-copy={contact.wechat}
+                    class="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-slate-100"
+                  >
+                    复制
+                  </button>
+                </div>
+              )
+            }
+          </div>
+
+          {
+            contact.wechatQr && (
+              <div class="mt-3 flex items-center gap-3">
+                <img
+                  src={contact.wechatQr}
+                  alt="微信二维码"
+                  class="h-28 w-28 shrink-0 rounded-lg border border-slate-200 object-contain"
+                />
+                <p class="text-xs text-slate-400">扫码加我微信</p>
+              </div>
+            )
+          }
+
+          <!-- 时段价格 -->
+          {
+            hasPrices && (
+              <div class="mt-4">
+                <div class="text-xs font-medium text-slate-500">时段价格</div>
+                <div class="mt-1 divide-y divide-slate-100">
+                  {contact.prices.map((item) => (
+                    <div class="flex items-baseline justify-between gap-3 py-2">
+                      <span class="text-sm text-slate-600">{item.label}</span>
+                      <span class="shrink-0 text-sm font-semibold text-slate-900 tabular-nums">{item.price}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          }
+
+          {contact.note && <p class="mt-3 text-xs leading-relaxed text-slate-400">{contact.note}</p>}
+        </div>
+      </details>
 
       <!-- 时间表：打开页面就能看到 -->
       <section id="result">
