@@ -21,6 +21,7 @@ import {
   monthGrid,
   monthKey,
   nowPosition,
+  parseTime,
   shiftDateKey,
   splitSlots,
   timePercent,
@@ -174,11 +175,33 @@ function renderTimeGrid(
     for (const slot of free) {
       const top = timePercent(slot.start, range);
       const height = timePercent(slot.end, range) - top;
-      const freeBox = make('div', 'absolute inset-x-0.5 z-0 rounded-md bg-emerald-50 ring-1 ring-emerald-100');
+      const minutes = parseTime(slot.end) - parseTime(slot.start);
+
+      const freeBox = make(
+        'div',
+        'absolute inset-x-0.5 z-0 overflow-hidden rounded-md bg-emerald-50 ring-1 ring-emerald-100',
+      );
       freeBox.dataset.free = '1';
       place(freeBox, top, height);
       if (height >= 5) {
-        freeBox.appendChild(make('div', 'px-1.5 pt-0.5 text-[10px] font-medium text-emerald-600/90', '空闲'));
+        // 标明空闲了多久
+        freeBox.appendChild(
+          make(
+            'div',
+            'truncate px-1.5 pt-0.5 text-[10px] font-medium text-emerald-700/90',
+            `空闲 ${formatDuration(minutes)}`,
+          ),
+        );
+        // 够高的话把具体时间段也写上（6% ≈ 手机上 43px，放得下两行）
+        if (height >= 6) {
+          freeBox.appendChild(
+            make(
+              'div',
+              'truncate px-1.5 font-mono text-[9px] tabular-nums text-emerald-600/80 sm:text-[10px]',
+              `${slot.start}–${slot.end}`,
+            ),
+          );
+        }
       }
       col.appendChild(freeBox);
     }
@@ -241,6 +264,7 @@ function renderMonthCell(
   authorized: boolean,
   today: string,
   blocks: PositionedBlock[],
+  freeMinutes: number,
 ): HTMLButtonElement {
   const isToday = cell.date === today;
   const busy = blocks.length > 0;
@@ -292,6 +316,16 @@ function renderMonthCell(
     }
     if (blocks.length > 2) {
       btn.appendChild(make('div', 'hidden text-[10px] leading-4 text-slate-400 sm:block', `+${blocks.length - 2}`));
+    }
+    // 一整天都没安排：标明空闲了多久
+    if (!busy) {
+      btn.appendChild(
+        make(
+          'div',
+          'mt-0.5 hidden text-[10px] leading-4 font-medium text-emerald-600/90 sm:block',
+          `空闲 ${formatDuration(freeMinutes)}`,
+        ),
+      );
     }
   }
 
@@ -366,12 +400,17 @@ export function initApp(): void {
       renderTimeGrid([date], { authorized: isAuthorized(), today, schedule: app.schedule, range: app.range }),
     );
 
+    const { free } = splitSlots(buildTimeline(app.schedule, date, app.range));
+    const busyMinutes = blocks.reduce((sum, b) => sum + b.duration, 0);
+    const freeMinutes = free.reduce((sum, f) => sum + (parseTime(f.end) - parseTime(f.start)), 0);
+
     if (blocks.length) {
-      const minutes = blocks.reduce((sum, b) => sum + b.duration, 0);
-      notice!.textContent = `这一天忙碌 ${formatDuration(minutes)}（${blocks.length} 段安排）`;
+      notice!.textContent =
+        `忙碌 ${formatDuration(busyMinutes)}（${blocks.length} 段） · ` +
+        `空闲 ${formatDuration(freeMinutes)}（${free.length} 段）`;
       notice!.className = 'mb-3 text-xs text-slate-400';
     } else {
-      notice!.textContent = date === today ? '今天没有安排 · 全天空闲' : '这一天没有安排 · 全天空闲';
+      notice!.textContent = `${date === today ? '今天' : '这一天'}没有安排 · 全天空闲 ${formatDuration(freeMinutes)}`;
       notice!.className =
         'mb-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-center text-sm text-emerald-700';
     }
@@ -392,8 +431,10 @@ export function initApp(): void {
     const authorized = isAuthorized();
     monthGridEl!.replaceChildren();
     for (const cell of monthGrid(date)) {
+      const { free } = splitSlots(buildTimeline(app.schedule, cell.date, app.range));
+      const freeMinutes = free.reduce((sum, f) => sum + (parseTime(f.end) - parseTime(f.start)), 0);
       monthGridEl!.appendChild(
-        renderMonthCell(cell, authorized, today, layoutDay(app.schedule, cell.date, app.range)),
+        renderMonthCell(cell, authorized, today, layoutDay(app.schedule, cell.date, app.range), freeMinutes),
       );
     }
   }

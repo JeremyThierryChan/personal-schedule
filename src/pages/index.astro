@@ -29,13 +29,16 @@ const appData = JSON.stringify({
   </head>
 
   <body class="min-h-screen">
-    <main class="mx-auto w-full max-w-2xl px-4 py-10 sm:py-16">
+    <!-- 手机 / 平板：居中窄栏；桌面（lg 以上）：铺满整个屏幕宽度 -->
+    <main class="mx-auto w-full max-w-2xl px-4 py-10 sm:py-16 lg:max-w-none lg:px-8 xl:px-12">
       <!-- 标题 -->
-      <header class="mb-8">
-        <h1 class="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Personal Schedule</h1>
-        <p class="mt-1 text-sm text-slate-500">
-          今天是 <span id="today-line" class="font-medium text-slate-700">{formatDateLabel(today)}</span>
-        </p>
+      <header class="mb-6 flex flex-wrap items-end justify-between gap-2 lg:mb-8">
+        <div>
+          <h1 class="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Personal Schedule</h1>
+          <p class="mt-1 text-sm text-slate-500">
+            今天是 <span id="today-line" class="font-medium text-slate-700">{formatDateLabel(today)}</span>
+          </p>
+        </div>
       </header>
 
       <!-- 姓名验证（可选）：默认只显示一个入口条，不挡着时间表 -->
