@@ -3,12 +3,19 @@ import '../styles/global.css';
 import scheduleData from '../data/schedule.json';
 import visitorsData from '../data/visitors.json';
 import contactData from '../data/contact.json';
-import { beijingTodayKey, computeRange, formatDateLabel, type BusyEntry } from '../lib/schedule';
+import settingsData from '../data/settings.json';
+import { beijingTodayKey, computeRange, formatDateLabel, type BusyEntry, type RestWindow } from '../lib/schedule';
 import type { Visitor } from '../lib/access';
 
-// 一天的范围：默认 08:00–23:00，若数据里有更早/更晚的安排会自动扩展（不会裁掉）
+// 一天的范围：默认整天 00:00–23:59，若数据里真有超出范围的安排会自动扩展（不会裁掉）
 const schedule = scheduleData as BusyEntry[];
 const range = computeRange(schedule);
+
+// 每天的休息时段（默认 22:00 → 次日 08:00）：用另一种颜色显示，且不算空闲
+const rest: RestWindow | undefined =
+  settingsData.restStart && settingsData.restEnd
+    ? { start: settingsData.restStart, end: settingsData.restEnd }
+    : undefined;
 
 // 日程数据是北京时间的，所以「今天」也用北京时间（页面加载后由浏览器端再算一次）
 const today = beijingTodayKey();
@@ -25,6 +32,7 @@ const appData = JSON.stringify({
   schedule,
   visitors: visitorsData as Visitor[],
   range,
+  rest,
 }).replace(/</g, '\\u003c');
 ---
 
@@ -139,6 +147,13 @@ const appData = JSON.stringify({
             <span class="inline-flex items-center gap-1.5">
               <span class="h-3 w-3 rounded bg-rose-100 ring-1 ring-rose-300"></span>忙碌
             </span>
+            {
+              rest && (
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="h-3 w-3 rounded bg-indigo-100 ring-1 ring-indigo-200" />休息
+                </span>
+              )
+            }
             <span class="inline-flex items-center gap-1.5">
               <span class="h-3 w-3 rounded bg-emerald-50 ring-1 ring-emerald-200"></span>空闲
             </span>

@@ -33,6 +33,7 @@ import {
   weekdayName,
   type BusyEntry,
   type DayRange,
+  type RestWindow,
   type PositionedBlock,
 } from '../lib/schedule';
 
@@ -40,6 +41,8 @@ interface AppData {
   schedule: BusyEntry[];
   visitors: Visitor[];
   range: DayRange;
+  /** 每天的休息时段（可选）：不算空闲 */
+  rest?: RestWindow;
 }
 
 type View = 'day' | 'week' | 'month';
@@ -176,9 +179,9 @@ function renderBlock(block: PositionedBlock, authorized: boolean, mode: 'day' | 
  */
 function renderTimeGrid(
   days: string[],
-  opts: { authorized: boolean; today: string; schedule: BusyEntry[]; range: DayRange },
+  opts: { authorized: boolean; today: string; schedule: BusyEntry[]; range: DayRange; rest?: RestWindow },
 ): HTMLElement {
-  const { authorized, today, schedule, range } = opts;
+  const { authorized, today, schedule, range, rest } = opts;
   const multi = days.length > 1;
   const marks = hourMarks(range);
 
@@ -267,8 +270,41 @@ function renderTimeGrid(
     );
     if (multi) col.dataset.date = d; // 周视图：点某一列跳到那天
 
-    // 1) 背景层：自动算出来的空闲时段（浅绿）
-    const { free } = splitSlots(buildTimeline(schedule, d, range));
+    // 1) 背景层：休息时段（靛蓝）+ 空闲时段（浅绿）
+    const { free, rest: restSlots } = splitSlots(buildTimeline(schedule, d, range, rest));
+
+    for (const slot of restSlots) {
+      const top = timePercent(slot.start, range);
+      const height = timePercent(slot.end, range) - top;
+      const minutes = parseTime(slot.end) - parseTime(slot.start);
+
+      const restBox = make(
+        'div',
+        'absolute inset-x-0.5 z-0 overflow-hidden rounded-md bg-indigo-100/70 ring-1 ring-indigo-200/70',
+      );
+      restBox.dataset.rest = '1';
+      place(restBox, top, height);
+      if (height >= 5) {
+        restBox.appendChild(
+          make(
+            'div',
+            'truncate px-1 pt-0.5 text-[10px] font-medium text-indigo-500/90 sm:px-1.5',
+            `休息 ${formatDuration(minutes)}`,
+          ),
+        );
+        if (height >= 6) {
+          restBox.appendChild(
+            make(
+              'div',
+              'truncate px-1.5 font-mono text-[9px] tabular-nums text-indigo-400/90 sm:text-[10px]',
+              `${slot.start}–${slot.end}`,
+            ),
+          );
+        }
+      }
+      col.appendChild(restBox);
+    }
+
     for (const slot of free) {
       const top = timePercent(slot.start, range);
       const height = timePercent(slot.end, range) - top;
@@ -444,22 +480,29 @@ export function initApp(): void {
   function renderDay(): void {
     const blocks = layoutDay(app.schedule, date, app.range);
     dayView!.replaceChildren(
-      renderTimeGrid([date], { authorized: isAuthorized(), today, schedule: app.schedule, range: app.range }),
+      renderTimeGrid([date], {
+        authorized: isAuthorized(),
+        today,
+        schedule: app.schedule,
+        range: app.range,
+        rest: app.rest,
+      }),
     );
 
-    const { free } = splitSlots(buildTimeline(app.schedule, date, app.range));
+    const { free, rest: restSlots } = splitSlots(buildTimeline(app.schedule, date, app.range, app.rest));
+    const total = (slots: { start: string; end: string }[]) =>
+      slots.reduce((sum, s) => sum + (parseTime(s.end) - parseTime(s.start)), 0);
     const busyMinutes = blocks.reduce((sum, b) => sum + b.duration, 0);
-    const freeMinutes = free.reduce((sum, f) => sum + (parseTime(f.end) - parseTime(f.start)), 0);
+    const freeMinutes = total(free);
+    const restMinutes = total(restSlots);
 
-    if (blocks.length) {
-      notice!.textContent =
-        `忙碌 ${formatDuration(busyMinutes)}（${blocks.length} 段） · ` +
-        `空闲 ${formatDuration(freeMinutes)}（${free.length} 段）`;
-      notice!.className = 'mb-3 text-xs text-slate-400';
-    } else {
-      notice!.textContent = `${date === today ? '今天' : '这一天'}没有安排 · 全天空闲 ${formatDuration(freeMinutes)}`;
-      notice!.className =
-        'mb-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-center text-sm text-emerald-700';
+    const parts = [`忙碌 ${formatDuration(busyMinutes)}（${blocks.length} 段）`];
+    if (restMinutes > 0) parts.push(`休息 ${formatDuration(restMinutes)}`);
+    parts.push(`可约 ${formatDuration(freeMinutes)}`);
+    notice!.textContent = parts.join(' · ');
+    notice!.className = 'mb-3 text-xs text-slate-400';
+    if (!blocks.length) {
+      notice!.textContent = `${date === today ? '今天' : '这一天'}没有安排 · ${notice!.textContent}`;
     }
   }
 
@@ -470,6 +513,7 @@ export function initApp(): void {
         today,
         schedule: app.schedule,
         range: app.range,
+        rest: app.rest,
       }),
     );
   }
@@ -477,7 +521,8 @@ export function initApp(): void {
   function renderMonth(): void {
     monthGridEl!.replaceChildren();
     for (const cell of monthGrid(date)) {
-      const { free } = splitSlots(buildTimeline(app.schedule, cell.date, app.range));
+      // 月视图里的「空闲」= 真正能约的时间，休息时段已经扣掉了
+      const { free } = splitSlots(buildTimeline(app.schedule, cell.date, app.range, app.rest));
       const freeMinutes = free.reduce((sum, f) => sum + (parseTime(f.end) - parseTime(f.start)), 0);
       const busy = layoutDay(app.schedule, cell.date, app.range).length > 0;
       monthGridEl!.appendChild(renderMonthCell(cell, today, freeMinutes, busy));

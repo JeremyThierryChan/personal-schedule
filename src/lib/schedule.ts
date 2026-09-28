@@ -23,17 +23,25 @@ export interface BusyEntry {
   details?: string;
 }
 
-/** 时间线上的一段（空闲或忙碌） */
+/** 时间线上的一段：忙碌（有安排） / 休息（个人时间，不算空闲） / 空闲（可以约） */
+export type SlotKind = 'busy' | 'rest' | 'free';
+
 export interface Slot {
   start: string;
   end: string;
-  busy: boolean;
-  /** 仅忙碌时段有，空闲时段为空字符串 */
+  kind: SlotKind;
+  /** 仅忙碌时段有，其他为空字符串 */
   title: string;
 }
 
-/** 一天的起止范围，默认 08:00 - 23:00 */
+/** 一天的起止范围，默认 00:00 - 23:59 */
 export interface DayRange {
+  start: string;
+  end: string;
+}
+
+/** 每天的休息时段，例如 22:00 → 次日 08:00（start > end 表示跨午夜） */
+export interface RestWindow {
   start: string;
   end: string;
 }
@@ -61,23 +69,79 @@ export function hasSchedule(entries: BusyEntry[], date: string): boolean {
   return entriesForDate(entries, date).length > 0;
 }
 
+/** 分钟区间 */
+interface Interval {
+  start: number;
+  end: number;
+}
+
+/** 合并重叠/相接的区间（输入不必有序） */
+function mergeIntervals(intervals: Interval[]): Interval[] {
+  const sorted = [...intervals].sort((a, b) => a.start - b.start);
+  const out: Interval[] = [];
+  for (const item of sorted) {
+    const last = out[out.length - 1];
+    if (last && item.start <= last.end) {
+      last.end = Math.max(last.end, item.end);
+    } else {
+      out.push({ ...item });
+    }
+  }
+  return out;
+}
+
+/** 从一组区间里挖掉另一组，返回剩下的部分 */
+function subtractIntervals(base: Interval[], holes: Interval[]): Interval[] {
+  let result = base.map((i) => ({ ...i }));
+  for (const hole of mergeIntervals(holes)) {
+    const next: Interval[] = [];
+    for (const item of result) {
+      if (hole.end <= item.start || hole.start >= item.end) {
+        next.push(item); // 不相交，原样保留
+        continue;
+      }
+      if (hole.start > item.start) next.push({ start: item.start, end: hole.start });
+      if (hole.end < item.end) next.push({ start: hole.end, end: item.end });
+    }
+    result = next;
+  }
+  return result.filter((i) => i.end > i.start);
+}
+
 /**
- * 计算一天的时间线：忙碌 + 自动补齐的间空闲。
- *
- * 会做三件事：
- * 1. 丢掉超出当天范围的时段（例如 00:30-01:00 会被忽略）
- * 2. 合并真正重叠的时段（首尾相接的不合并，仍然是两行）
- * 3. 用空闲把中间的缝隙和首尾补满
+ * 休息时段在「一天」里对应哪几段。
+ * 因为时间轴是一整天（00:00–23:59），22:00→次日 08:00 会被拆成
+ * [00:00–08:00] 和 [22:00–24:00] 两段。
  */
-export function buildTimeline(
+export function restWindows(range: DayRange, rest: RestWindow): Interval[] {
+  const start = parseTime(rest.start);
+  const end = parseTime(rest.end);
+  if (start === end) return []; // 起止相同 = 没有休息时段
+
+  const rangeStart = parseTime(range.start);
+  const rangeEnd = parseTime(range.end);
+  const raw: Interval[] =
+    start < end
+      ? [{ start, end }] // 不跨午夜，例如 12:00–13:00
+      : [
+          { start, end: 24 * 60 }, // 22:00 → 午夜
+          { start: 0, end }, // 午夜 → 08:00
+        ];
+
+  return raw
+    .map((w) => ({ start: Math.max(w.start, rangeStart), end: Math.min(w.end, rangeEnd) }))
+    .filter((w) => w.end > w.start);
+}
+
+/** 当天所有忙碌日程（已裁剪到范围、已合并真正重叠的部分） */
+function busyIntervals(
   entries: BusyEntry[],
   date: string,
-  range: DayRange = { start: '08:00', end: '23:00' },
-): Slot[] {
+  range: DayRange,
+): { start: number; end: number; title: string }[] {
   const rangeStart = parseTime(range.start);
   const rangeEnd = parseTime(range.end);
 
-  // 1. 裁剪到当天范围内
   const blocks = entriesForDate(entries, date)
     .map((e) => ({
       start: Math.max(parseTime(e.start), rangeStart),
@@ -87,7 +151,7 @@ export function buildTimeline(
     .filter((b) => b.end > b.start)
     .sort((a, b) => a.start - b.start);
 
-  // 2. 合并重叠的时段（09:00-11:00 + 10:00-12:00 -> 09:00-12:00）
+  // 合并真正重叠的（首尾相接的仍然是两条）
   const merged: { start: number; end: number; title: string }[] = [];
   for (const block of blocks) {
     const last = merged[merged.length - 1];
@@ -97,24 +161,48 @@ export function buildTimeline(
       merged.push({ ...block });
     }
   }
+  return merged;
+}
 
-  // 3. 用空闲补满
-  const timeline: Slot[] = [];
-  let cursor = rangeStart;
+/**
+ * 计算一天的时间线，分成三类：忙碌 / 休息 / 空闲。
+ *
+ * - **忙碌**：schedule.json 里的安排（已经合并重叠的部分）
+ * - **休息**：每天固定的个人时间（例如 22:00–次日 08:00），**不算空闲**
+ * - **空闲**：剩下的部分，也就是真正可以约的时间
+ *
+ * 安排和休息重叠时以安排为准（例如上课上到 23:00，那 22:00–23:00 算忙碌）。
+ */
+export function buildTimeline(
+  entries: BusyEntry[],
+  date: string,
+  range: DayRange = { start: '00:00', end: '23:59' },
+  rest?: RestWindow,
+): Slot[] {
+  const rangeStart = parseTime(range.start);
+  const rangeEnd = parseTime(range.end);
+  const busy = busyIntervals(entries, date, range);
+  const busySpans = busy.map((b) => ({ start: b.start, end: b.end }));
 
-  for (const block of merged) {
-    if (block.start > cursor) {
-      timeline.push({ start: formatTime(cursor), end: formatTime(block.start), busy: false, title: '' });
-    }
-    timeline.push({ start: formatTime(block.start), end: formatTime(block.end), busy: true, title: block.title });
-    cursor = block.end;
-  }
+  // 休息时段要挖掉当天的安排
+  const restBlocks = rest ? subtractIntervals(restWindows(range, rest), busySpans) : [];
 
-  if (cursor < rangeEnd) {
-    timeline.push({ start: formatTime(cursor), end: formatTime(rangeEnd), busy: false, title: '' });
-  }
+  // 空闲 = 一整天 − 安排 − 休息
+  const free = subtractIntervals([{ start: rangeStart, end: rangeEnd }], [...busySpans, ...restBlocks]);
 
-  return timeline;
+  // 先按分钟数排好，最后再格式化成 "HH:MM"
+  const timeline: { start: number; end: number; kind: SlotKind; title: string }[] = [
+    ...busy.map((b) => ({ start: b.start, end: b.end, kind: 'busy' as const, title: b.title })),
+    ...restBlocks.map((b) => ({ start: b.start, end: b.end, kind: 'rest' as const, title: '' })),
+    ...free.map((b) => ({ start: b.start, end: b.end, kind: 'free' as const, title: '' })),
+  ];
+
+  timeline.sort((a, b) => a.start - b.start);
+  return timeline.map((slot) => ({
+    ...slot,
+    start: formatTime(slot.start),
+    end: formatTime(slot.end),
+  }));
 }
 
 /* ---------- 日期辅助函数（全部用本地时间，避免 UTC 偏移） ---------- */
@@ -239,11 +327,12 @@ export function formatMonthLabel(anchor: string): string {
   return `${y}年${m}月`;
 }
 
-/** 把一组时间线拆成忙碌段和空闲段 */
-export function splitSlots(slots: Slot[]): { busy: Slot[]; free: Slot[] } {
+/** 把一组时间线拆成忙碌段 / 休息段 / 空闲段 */
+export function splitSlots(slots: Slot[]): { busy: Slot[]; rest: Slot[]; free: Slot[] } {
   return {
-    busy: slots.filter((s) => s.busy),
-    free: slots.filter((s) => !s.busy),
+    busy: slots.filter((s) => s.kind === 'busy'),
+    rest: slots.filter((s) => s.kind === 'rest'),
+    free: slots.filter((s) => s.kind === 'free'),
   };
 }
 
