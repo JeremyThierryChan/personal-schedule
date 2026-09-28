@@ -74,6 +74,10 @@ npm run preview    # 本地预览构建结果
 
 ## 2. 修改日程：`src/data/schedule.json`
 
+有两种改法：**手写 JSON**，或者**从 Apple 日历自动导入**（见 2.2）。
+
+### 2.1 手写：`src/data/schedule.json`
+
 **只写「忙碌」的时段**，空闲时间会自动算出来。
 
 ```json
@@ -125,9 +129,47 @@ npm run preview    # 本地预览构建结果
 注意：
 
 - 一天没有写任何日程时，页面显示「今天没有安排 · 全天空闲 15 小时」。
-- 超出 `08:00–23:00` 的时段会被裁剪掉（例如写 `22:00-23:30`，只会显示到 `23:00`）。
-  想改这个范围：打开 `src/pages/index.astro`，改顶部的 `const range = { start: '08:00', end: '23:00' }`。
+- 时间轴范围默认 `08:00–23:00`，但**数据里有更早/更晚的安排时会自动扩展**（保证不裁掉日程）。
+  例如存在一条 `01:00–02:00` 的日程，时间轴会自动变成 `01:00–23:00`。
 - 两个时段首尾相接（`12:00-14:00` + `14:00-16:00`）会显示成两行；真正重叠的时段会自动合并。
+
+### 2.2 从 Apple 日历导入：`日历/*.ics`
+
+把 Apple 日历导出的 `.ics` 放进项目根目录的 **`日历/`** 文件夹，然后：
+
+```bash
+npm run import-ics      # 读 日历/*.ics → 重写 src/data/schedule.json
+```
+
+脚本会打印报告（读了几条、展开成几条、覆盖哪些日期、有哪些警告）。
+
+**`日历/` 已经写进 `.gitignore`，永远不会被 push**；要提交的是它生成出来的
+`src/data/schedule.json`（GitHub Actions 靠这个文件构建）。所以流程是：
+
+```bash
+# 1. 从 Apple 日历重新导出 .ics，放进 日历/
+npm run import-ics          # 2. 重新生成 src/data/schedule.json
+git add .
+git commit -m "update schedule"
+git push                    # 3. 只有 JSON 会被推上去
+```
+
+导入脚本做了什么：
+
+| 处理 | 说明 |
+| --- | --- |
+| 重复日程 `RRULE` | 展开成一条条具体日期。支持 `FREQ=DAILY` / `FREQ=WEEKLY`，以及 `INTERVAL`、`COUNT`、`UNTIL`、`BYDAY` |
+| 排除日期 `EXDATE` | 被排除的那几次不会生成（同一条 `EXDATE` 可以有多行） |
+| 无限重复 | 没有 `UNTIL`/`COUNT` 的事件最多展开 **365 天 / 400 次**，并在报告里提醒 |
+| 不支持的规则 | `MONTHLY` / `YEARLY` 只保留第一次，并在报告里提醒 |
+| 时区 | 固定按 `Asia/Shanghai (+08:00)` 处理（`.ics` 里的 `Z` 时间会自动换算） |
+| `LOCATION` / `DESCRIPTION` | 有的话会写成 `location` / `details` 字段 |
+| `type` | 只有当「日历」文件夹里有**多个** `.ics` 时才写（用日历名当类型，单个日历时避免每条都重复） |
+
+零依赖，就是一个 `node scripts/import-ics.mjs`，不用装任何东西。
+
+> ⚠️ **重要**：`日历/` 不进 git 只是不让**原始 `.ics`** 进仓库；导入后的日程数据**会**写进
+> `schedule.json` 并嵌入网页，所以**线上页面的源码里仍然能看到全部日程**（见第 5 节）。
 
 ---
 
@@ -187,6 +229,8 @@ git push
 
 ```
 ├── .github/workflows/deploy.yml   # GitHub Actions：自动构建并部署到 Pages
+├── scripts/import-ics.mjs         # 把 日历/*.ics 转成 src/data/schedule.json
+├── 日历/                          # Apple 日历导出的 .ics（已 gitignore，不 push）
 ├── public/.nojekyll               # 防止 GitHub Pages 的 Jekyll 忽略 _astro 目录
 ├── src
 │   ├── data
@@ -211,4 +255,6 @@ git push
 - 让 `schedule.json` 支持颜色分类（学习 / 工作 / 私人各一种颜色）
 - 给 `visitors.json` 加过期时间（例如某人的授权只到某个日期）
 - 想提高一点门槛：把 `title` 用简单口令加密（AES），只有输入正确姓名时才在浏览器里解密 —— 但**仍然不是真正的安全**，前端密钥终究能被看到
-- 把真实日程换成从 Google Calendar 导出的 `.ics` 自动生成 `schedule.json`（在 Actions 里跑一个脚本）
+- 支持 `RRULE` 的 `MONTHLY` / `YEARLY`（现在是只保留第一次 + 提醒）
+- 支持 iCloud 日历的**订阅地址**，定时自动拉取（现在是手动导出 .ics）
+- 导入时把同名事件的机构名（全慧文苑 / 沐阳…）拆出来当 `type`，让周视图摘要更有信息量

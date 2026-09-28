@@ -6,6 +6,10 @@ dist/
 # dependencies
 node_modules/
 
+# 日历原始文件（Apple 日历导出）：只在本机用，不提交
+# 用 npm run import-ics 把它转成 src/data/schedule.json（那个是要提交的）
+/日历/
+
 # local npm cache
 .npm-cache/
 

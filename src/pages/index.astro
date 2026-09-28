@@ -2,17 +2,18 @@
 import '../styles/global.css';
 import scheduleData from '../data/schedule.json';
 import visitorsData from '../data/visitors.json';
-import { formatDateLabel, todayKey, type BusyEntry } from '../lib/schedule';
+import { computeRange, formatDateLabel, todayKey, type BusyEntry } from '../lib/schedule';
 import type { Visitor } from '../lib/access';
 
-// 一天的默认范围，改这里可以调整「全天空闲」的起止时间
-const range = { start: '08:00', end: '23:00' };
+// 一天的范围：默认 08:00–23:00，若数据里有更早/更晚的安排会自动扩展（不会裁掉）
+const schedule = scheduleData as BusyEntry[];
+const range = computeRange(schedule);
 
 const today = todayKey();
 
 // 把数据内嵌进页面，交给浏览器端渲染（静态站点，没有后端）
 const appData = JSON.stringify({
-  schedule: scheduleData as BusyEntry[],
+  schedule,
   visitors: visitorsData as Visitor[],
   range,
 }).replace(/</g, '\\u003c');

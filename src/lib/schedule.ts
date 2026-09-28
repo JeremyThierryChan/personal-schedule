@@ -241,6 +241,24 @@ export function formatHours(minutes: number): string {
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
 
+/**
+ * 算出时间轴范围：默认 08:00–23:00；
+ * 数据里如果有更早/更晚的安排（例如从 .ics 导入的凌晨日程），
+ * 就自动扩到整点，保证不会把安排裁掉。
+ */
+export function computeRange(entries: BusyEntry[], fallback: DayRange = { start: '08:00', end: '23:00' }): DayRange {
+  let start = parseTime(fallback.start);
+  let end = parseTime(fallback.end);
+  for (const entry of entries) {
+    start = Math.min(start, Math.floor(parseTime(entry.start) / 60) * 60);
+    end = Math.max(end, Math.ceil(parseTime(entry.end) / 60) * 60);
+  }
+  return {
+    start: formatTime(Math.max(0, start)),
+    end: formatTime(Math.min(24 * 60, end)),
+  };
+}
+
 /* ---------- 日历网格布局（Apple 日历那种：位置 + 高度表示时间） ---------- */
 
 /** 一个已经算好位置和大小的日程方块，数值都是相对整个时间轴的百分比 */
