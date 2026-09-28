@@ -15,6 +15,12 @@ export interface BusyEntry {
   end: string;
   /** 活动名称（只有已授权访客能看到） */
   title: string;
+  /** 事务类型，例如「学习」「会议」（可选，周视图的摘要用） */
+  type?: string;
+  /** 地址 / 地点，例如「线上 Zoom」（可选，周视图的摘要用） */
+  location?: string;
+  /** 具体做什么（可选，只在日视图里显示） */
+  details?: string;
 }
 
 /** 时间线上的一段（空闲或忙碌） */
@@ -229,11 +235,23 @@ export function formatDuration(minutes: number): string {
   return `${minutes} 分钟`;
 }
 
+/** 只取小时数、不带单位：570 -> "9.5"，900 -> "15"（月视图格子窄，用这个） */
+export function formatHours(minutes: number): string {
+  const hours = minutes / 60;
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+}
+
 /* ---------- 日历网格布局（Apple 日历那种：位置 + 高度表示时间） ---------- */
 
 /** 一个已经算好位置和大小的日程方块，数值都是相对整个时间轴的百分比 */
 export interface PositionedBlock {
   title: string;
+  /** 事务类型（周视图摘要用） */
+  type: string;
+  /** 地址 / 地点（周视图摘要用） */
+  location: string;
+  /** 具体事项（日视图用） */
+  details: string;
   start: string;
   end: string;
   /** 距离时间轴顶部的位置，0-100 */
@@ -246,6 +264,11 @@ export interface PositionedBlock {
   width: number;
   /** 时长（分钟），用来决定方块里能不能放下文字 */
   duration: number;
+}
+
+/** 摘要：类型 · 地点，例如「学习 · 线上 Zoom」；两者都没有时返回空字符串 */
+export function blockSummary(block: { type: string; location: string }): string {
+  return [block.type, block.location].filter(Boolean).join(' · ');
 }
 
 /**
@@ -263,6 +286,9 @@ export function layoutDay(entries: BusyEntry[], date: string, range: DayRange): 
   const blocks = entriesForDate(entries, date)
     .map((e) => ({
       title: e.title,
+      type: e.type ?? '',
+      location: e.location ?? '',
+      details: e.details ?? '',
       start: Math.max(parseTime(e.start), rangeStart),
       end: Math.min(parseTime(e.end), rangeEnd),
     }))
@@ -270,8 +296,8 @@ export function layoutDay(entries: BusyEntry[], date: string, range: DayRange): 
     .sort((a, b) => a.start - b.start || b.end - a.end);
 
   // 1. 按「互相重叠」分成若干簇
-  const clusters: { title: string; start: number; end: number }[][] = [];
-  let cluster: { title: string; start: number; end: number }[] = [];
+  const clusters: (typeof blocks)[number][][] = [];
+  let cluster: (typeof blocks)[number][] = [];
   let clusterEnd = -1;
   for (const block of blocks) {
     if (cluster.length && block.start >= clusterEnd) {
@@ -304,6 +330,9 @@ export function layoutDay(entries: BusyEntry[], date: string, range: DayRange): 
     for (const { block, column } of placed) {
       result.push({
         title: block.title,
+        type: block.type,
+        location: block.location,
+        details: block.details,
         start: formatTime(block.start),
         end: formatTime(block.end),
         top: ((block.start - rangeStart) / total) * 100,

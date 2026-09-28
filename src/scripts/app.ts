@@ -10,9 +10,11 @@
 import { resolveLevel, type Visitor } from '../lib/access';
 import {
   addMonths,
+  blockSummary,
   buildTimeline,
   formatDateLabel,
   formatDuration,
+  formatHours,
   formatMonthLabel,
   formatWeekLabel,
   hourMarks,
@@ -43,8 +45,12 @@ type View = 'day' | 'week' | 'month';
 
 const STORAGE_KEY = 'personal-schedule:name';
 
-/** 时间轴容器高度：手机上矮一点，桌面高一点 */
-const GRID_HEIGHT = 'h-[720px] sm:h-[920px]';
+/**
+ * 时间轴容器高度：15 小时（08:00–23:00）按比例铺开。
+ * 手机 860px ≈ 每小时 57px，桌面 1000px ≈ 每小时 67px，方块里放得下字。
+ * 高度固定，所以内部不会出现纵向滚动条（要滚动就滚整个页面）。
+ */
+const GRID_HEIGHT = 'h-[860px] sm:h-[1000px]';
 
 /** 从 <script id="app-data"> 里读取数据 */
 function readData(): AppData | null {
@@ -87,6 +93,75 @@ function place(el: HTMLElement, top: number, height: number, left?: number, widt
 /* ================= 日视图 / 周视图：时间轴网格 ================= */
 
 /**
+ * 生成一个日程方块。
+ * - 日视图：写得详细（活动名 + 时间 + 类型/地点 + 具体事项）
+ * - 周视图：只写摘要（活动名 + 类型 · 地点）
+ * - 访客：一律只写「忙碌」和时间段
+ */
+function renderBlock(block: PositionedBlock, authorized: boolean, mode: 'day' | 'week'): HTMLElement {
+  const card = make(
+    'div',
+    'absolute z-10 overflow-hidden rounded-md border border-rose-300 bg-rose-100 px-1.5 py-0.5 shadow-sm',
+  );
+  place(card, block.top, block.height, block.left, block.width);
+  card.style.minHeight = '17px';
+  card.dataset.block = '1';
+
+  const time = `${block.start}–${block.end}`;
+  const summary = blockSummary(block);
+  const headline = authorized && block.title ? block.title : '忙碌';
+  // hover 的原生 tooltip 给全量信息
+  card.title = [time, headline, summary, block.details].filter(Boolean).join(' · ');
+
+  card.appendChild(
+    make(
+      'div',
+      `truncate font-medium leading-tight text-rose-900 ${
+        mode === 'day' ? 'text-[11px] sm:text-sm' : 'text-[10px] sm:text-xs'
+      }`,
+      headline,
+    ),
+  );
+
+  // 访客：只有时间段
+  if (!authorized) {
+    if (block.duration >= 60) {
+      card.appendChild(
+        make('div', 'truncate font-mono text-[9px] tabular-nums leading-tight text-rose-600/90 sm:text-[10px]', time),
+      );
+    }
+    return card;
+  }
+
+  // 周视图：只写摘要（类型 · 地点），没有摘要就退回时间段
+  if (mode === 'week') {
+    if (block.duration >= 60) {
+      card.appendChild(
+        make('div', 'truncate text-[9px] leading-tight text-rose-600/90 sm:text-[10px]', summary || time),
+      );
+    }
+    return card;
+  }
+
+  // 日视图：活动名 + 时间 + 类型/地点 + 具体事项
+  if (block.duration >= 30) {
+    card.appendChild(
+      make(
+        'div',
+        'truncate text-[9px] leading-tight text-rose-600/90 sm:text-[11px]',
+        [time, summary].filter(Boolean).join(' · '),
+      ),
+    );
+  }
+  if (block.details && block.duration >= 60) {
+    card.appendChild(
+      make('div', 'mt-0.5 line-clamp-2 text-[9px] leading-snug text-rose-800/80 sm:text-[11px]', block.details),
+    );
+  }
+  return card;
+}
+
+/**
  * 画一个时间轴网格。
  * days.length === 1 是日视图（一列），=== 7 是周视图（七列横向铺开）。
  */
@@ -98,8 +173,8 @@ function renderTimeGrid(
   const multi = days.length > 1;
   const marks = hourMarks(range);
 
-  // 周视图在手机上放不下 7 列，允许横向滚动
-  const scroller = make('div', multi ? '-mx-1 overflow-x-auto px-1 pb-1' : '');
+  // 周视图在手机上放不下 7 列，只允许横向滚动；纵向一定不滚动
+  const scroller = make('div', multi ? '-mx-1 overflow-x-auto overflow-y-hidden px-1' : '');
   const inner = make('div', multi ? 'min-w-[620px]' : '');
   scroller.appendChild(inner);
 
@@ -137,10 +212,12 @@ function renderTimeGrid(
 
   // 左侧时间刻度
   const gutter = make('div', 'relative w-10 shrink-0 sm:w-12');
-  for (const mark of marks) {
+  for (const [i, mark] of marks.entries()) {
+    // 首尾两个刻度不能做成「上下居中」，否则会超出容器、撑出滚动条
+    const align = i === 0 ? '' : i === marks.length - 1 ? '-translate-y-full' : '-translate-y-1/2';
     const label = make(
       'div',
-      'absolute right-1.5 -translate-y-1/2 font-mono text-[10px] tabular-nums text-slate-400 sm:text-xs',
+      `absolute right-1.5 font-mono text-[10px] tabular-nums text-slate-400 sm:text-xs ${align}`,
       mark.time,
     );
     label.style.top = `${mark.top}%`;
@@ -208,33 +285,7 @@ function renderTimeGrid(
 
     // 2) 前景层：日程方块（高度和位置 = 占用的时间长短）
     for (const block of layoutDay(schedule, d, range)) {
-      const card = make(
-        'div',
-        'absolute z-10 overflow-hidden rounded-md border border-rose-300 bg-rose-100 px-1.5 py-0.5 shadow-sm',
-      );
-      place(card, block.top, block.height, block.left, block.width);
-      card.style.minHeight = '17px';
-      card.dataset.block = '1';
-      card.title = `${block.start}–${block.end} ${authorized && block.title ? block.title : '忙碌'}`;
-
-      card.appendChild(
-        make(
-          'div',
-          'truncate text-[10px] font-medium leading-tight text-rose-900 sm:text-xs',
-          authorized && block.title ? block.title : '忙碌',
-        ),
-      );
-      // 方块够高才放得下时间
-      if (block.duration >= 60) {
-        card.appendChild(
-          make(
-            'div',
-            'truncate font-mono text-[9px] leading-tight text-rose-600/90 tabular-nums sm:text-[10px]',
-            `${block.start}–${block.end}`,
-          ),
-        );
-      }
-      col.appendChild(card);
+      col.appendChild(renderBlock(block, authorized, multi ? 'week' : 'day'));
     }
 
     // 3) 今天：一条「现在」的红线
@@ -261,13 +312,11 @@ function renderTimeGrid(
 
 function renderMonthCell(
   cell: { date: string; inMonth: boolean },
-  authorized: boolean,
   today: string,
-  blocks: PositionedBlock[],
   freeMinutes: number,
+  busy: boolean,
 ): HTMLButtonElement {
   const isToday = cell.date === today;
-  const busy = blocks.length > 0;
 
   const btn = make(
     'button',
@@ -292,41 +341,18 @@ function renderMonthCell(
     ),
   );
 
-  // 手机上只显示圆点（屏幕太窄，放不下文字）
-  if (busy && cell.inMonth) {
+  // 月视图只显示「这一天空闲多久」——不列具体日程
+  if (cell.inMonth) {
+    const hours = formatHours(freeMinutes);
+    // 手机上格子窄，只写 "9.5h"
+    btn.appendChild(make('div', 'mt-auto text-[9px] font-medium leading-none text-emerald-600/90 sm:hidden', `${hours}h`));
     btn.appendChild(
       make(
         'div',
-        'mt-auto text-[9px] leading-none tracking-tight text-rose-400 sm:hidden',
-        blocks.length > 3 ? '●●●' : '●'.repeat(blocks.length),
+        'mt-auto hidden text-[10px] leading-4 font-medium text-emerald-600/90 sm:block',
+        `空闲 ${hours} 小时`,
       ),
     );
-  }
-
-  // 电脑上显示前两个日程（苹果日历那样的小色条）
-  if (cell.inMonth) {
-    for (const block of blocks.slice(0, 2)) {
-      btn.appendChild(
-        make(
-          'div',
-          'mt-0.5 hidden truncate rounded bg-rose-100 px-1 text-[10px] leading-4 text-rose-700 sm:block',
-          `${block.start} ${authorized && block.title ? block.title : '忙碌'}`,
-        ),
-      );
-    }
-    if (blocks.length > 2) {
-      btn.appendChild(make('div', 'hidden text-[10px] leading-4 text-slate-400 sm:block', `+${blocks.length - 2}`));
-    }
-    // 一整天都没安排：标明空闲了多久
-    if (!busy) {
-      btn.appendChild(
-        make(
-          'div',
-          'mt-0.5 hidden text-[10px] leading-4 font-medium text-emerald-600/90 sm:block',
-          `空闲 ${formatDuration(freeMinutes)}`,
-        ),
-      );
-    }
   }
 
   return btn;
@@ -428,14 +454,12 @@ export function initApp(): void {
   }
 
   function renderMonth(): void {
-    const authorized = isAuthorized();
     monthGridEl!.replaceChildren();
     for (const cell of monthGrid(date)) {
       const { free } = splitSlots(buildTimeline(app.schedule, cell.date, app.range));
       const freeMinutes = free.reduce((sum, f) => sum + (parseTime(f.end) - parseTime(f.start)), 0);
-      monthGridEl!.appendChild(
-        renderMonthCell(cell, authorized, today, layoutDay(app.schedule, cell.date, app.range), freeMinutes),
-      );
+      const busy = layoutDay(app.schedule, cell.date, app.range).length > 0;
+      monthGridEl!.appendChild(renderMonthCell(cell, today, freeMinutes, busy));
     }
   }
 
