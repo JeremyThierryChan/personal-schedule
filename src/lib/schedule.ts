@@ -176,7 +176,7 @@ function busyIntervals(
 export function buildTimeline(
   entries: BusyEntry[],
   date: string,
-  range: DayRange = { start: '00:00', end: '23:59' },
+  range: DayRange = { start: '00:00', end: '24:00' },
   rest?: RestWindow,
 ): Slot[] {
   const rangeStart = parseTime(range.start);
@@ -341,34 +341,37 @@ export function totalMinutes(slots: Slot[]): number {
   return slots.reduce((sum, s) => sum + (parseTime(s.end) - parseTime(s.start)), 0);
 }
 
+/** 把分钟数拆成小时 + 分钟：95 -> { hours: 1, minutes: 35 } */
+function splitHM(total: number): { hours: number; minutes: number } {
+  return { hours: Math.floor(total / 60), minutes: total % 60 };
+}
+
 /**
- * 分钟 -> 小时，保留一位小数。
- * 先四舍五入再判断，才不会出现 "24.0 小时" / "3.0 小时" 这种尾巴
- * （一天的跨度是 23:59 = 1439 分钟，最容易碰到的就是这种值）。
+ * 把分钟数显示成 "1小时30分钟" / "14小时" / "45分钟"。
+ * 整点时不写多余的 "0分钟"，因为大部分时段都是整小时的。
  */
-function roundHours(minutes: number): number {
-  return Math.round((minutes / 60) * 10) / 10;
-}
-
-/** 把分钟数显示成 "5.5 小时" / "45 分钟" */
 export function formatDuration(minutes: number): string {
-  if (minutes <= 0) return '0 分钟';
-  const hours = roundHours(minutes);
-  if (hours >= 1) return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} 小时`;
-  return `${minutes} 分钟`;
+  if (minutes <= 0) return '0分钟';
+  const { hours, minutes: mins } = splitHM(minutes);
+  return [hours ? `${hours}小时` : '', mins ? `${mins}分钟` : ''].join('');
 }
 
-/** 只取小时数、不带单位：570 -> "9.5"，1439 -> "24"（月视图格子窄，用这个） */
-export function formatHours(minutes: number): string {
-  const hours = roundHours(minutes);
-  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+/** 紧凑写法，给月视图那种很窄的格子用："1时30分" / "14时" / "45分" */
+export function formatDurationShort(minutes: number): string {
+  if (minutes <= 0) return '0分';
+  const { hours, minutes: mins } = splitHM(minutes);
+  return [hours ? `${hours}时` : '', mins ? `${mins}分` : ''].join('');
 }
 
 /**
- * 算出时间轴范围。默认就是完整的一天：00:00 – 23:59。
+ * 算出时间轴范围。默认就是完整的一天：00:00 – 24:00。
+ *
+ * 内部用 24:00（=1440 分钟，整整 1440 分钟）而不是 23:59，
+ * 这样每个时段的时长都是精确的，不会出现「休息 9小时59分钟」这种尾巴；
+ * 界面上会把它显示成 "23:59"（见 app.ts 里的 timeLabel）。
  * 万一数据里真有超出这个范围的安排，会自动扩到整点，保证不会把安排裁掉。
  */
-export function computeRange(entries: BusyEntry[], fallback: DayRange = { start: '00:00', end: '23:59' }): DayRange {
+export function computeRange(entries: BusyEntry[], fallback: DayRange = { start: '00:00', end: '24:00' }): DayRange {
   let start = parseTime(fallback.start);
   let end = parseTime(fallback.end);
   for (const entry of entries) {
@@ -504,7 +507,7 @@ export function hourMarks(range: DayRange): { time: string; top: number }[] {
   for (let m = first; m <= end; m += 60) {
     marks.push({ time: formatTime(m), top: ((m - start) / total) * 100 });
   }
-  // 末尾不落在整点时（例如 00:00–23:59）也补一个刻度，底部才不会空一块没标记
+  // 末尾不落在整点时（例如有人把 range 改成 00:00–23:59）也补一个刻度，底部才不会空一块没标记
   const last = marks[marks.length - 1];
   if (!last || last.time !== range.end) {
     marks.push({ time: range.end, top: 100 });

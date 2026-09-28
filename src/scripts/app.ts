@@ -16,7 +16,7 @@ import {
   buildTimeline,
   formatDateLabel,
   formatDuration,
-  formatHours,
+  formatDurationShort,
   formatMonthLabel,
   formatWeekLabel,
   hourMarks,
@@ -79,6 +79,14 @@ function byId<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
 }
 
+/**
+ * 时间显示：一天在内部算到 24:00（这样每个时段的时长都是精确的），
+ * 但界面上把 24:00 写成 23:59 —— 也就是「一天到 23:59 结束」。
+ */
+function timeLabel(time: string): string {
+  return time === '24:00' ? '23:59' : time;
+}
+
 /** 小工具：创建元素，避免用 innerHTML 拼接用户输入 */
 function make<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -119,7 +127,7 @@ function renderBlock(block: PositionedBlock, authorized: boolean, mode: 'day' | 
   card.style.minHeight = '17px';
   card.dataset.block = '1';
 
-  const time = `${block.start}–${block.end}`;
+  const time = `${timeLabel(block.start)}–${timeLabel(block.end)}`;
   const summary = blockSummary(block);
   const headline = authorized && block.title ? block.title : '忙碌';
   // hover 的原生 tooltip 给全量信息
@@ -156,7 +164,8 @@ function renderBlock(block: PositionedBlock, authorized: boolean, mode: 'day' | 
   }
 
   // 日视图：活动名 + 时间 + 类型/地点 + 具体事项
-  if (block.duration >= 30) {
+  // （1 小时 ≈ 桌面 46px，正好放得下标题 + 一行小字；更短的就只写标题，免得被裁）
+  if (block.duration >= 60) {
     card.appendChild(
       make(
         'div',
@@ -165,7 +174,7 @@ function renderBlock(block: PositionedBlock, authorized: boolean, mode: 'day' | 
       ),
     );
   }
-  if (block.details && block.duration >= 60) {
+  if (block.details && block.duration >= 90) {
     card.appendChild(
       make('div', 'mt-0.5 line-clamp-2 text-[9px] leading-snug text-rose-800/80 sm:text-[11px]', block.details),
     );
@@ -198,7 +207,7 @@ function renderTimeGrid(
     const label = make(
       'div',
       `absolute right-1.5 font-mono text-[10px] tabular-nums text-slate-400 sm:text-xs ${align}`,
-      mark.time,
+      timeLabel(mark.time),
     );
     label.style.top = `${mark.top}%`;
     label.dataset.hourLabel = '1';
@@ -284,7 +293,7 @@ function renderTimeGrid(
       );
       restBox.dataset.rest = '1';
       place(restBox, top, height);
-      if (height >= 5) {
+      if (height >= 2.5) {
         restBox.appendChild(
           make(
             'div',
@@ -297,7 +306,7 @@ function renderTimeGrid(
             make(
               'div',
               'truncate px-1.5 font-mono text-[9px] tabular-nums text-indigo-400/90 sm:text-[10px]',
-              `${slot.start}–${slot.end}`,
+              `${timeLabel(slot.start)}–${timeLabel(slot.end)}`,
             ),
           );
         }
@@ -316,7 +325,9 @@ function renderTimeGrid(
       );
       freeBox.dataset.free = '1';
       place(freeBox, top, height);
-      if (height >= 5) {
+      // 24 小时制下 1 小时 = 4.17%，阈值按像素高度定：
+      // 2.5% ≈ 手机 24px / 桌面 28px，放得下一行；6% 能放两行
+      if (height >= 2.5) {
         // 标明空闲了多久
         freeBox.appendChild(
           make(
@@ -331,7 +342,7 @@ function renderTimeGrid(
             make(
               'div',
               'truncate px-1.5 font-mono text-[9px] tabular-nums text-emerald-600/80 sm:text-[10px]',
-              `${slot.start}–${slot.end}`,
+              `${timeLabel(slot.start)}–${timeLabel(slot.end)}`,
             ),
           );
         }
@@ -398,14 +409,15 @@ function renderMonthCell(
 
   // 月视图只显示「这一天空闲多久」——不列具体日程
   if (cell.inMonth) {
-    const hours = formatHours(freeMinutes);
-    // 手机上格子窄，只写 "9.5h"
-    btn.appendChild(make('div', 'mt-auto text-[9px] font-medium leading-none text-emerald-600/90 sm:hidden', `${hours}h`));
+    // 手机上格子窄，用「9时30分」这种紧凑写法
+    btn.appendChild(
+      make('div', 'mt-auto text-[9px] font-medium leading-none text-emerald-600/90 sm:hidden', formatDurationShort(freeMinutes)),
+    );
     btn.appendChild(
       make(
         'div',
-        'mt-auto hidden text-[10px] leading-4 font-medium text-emerald-600/90 sm:block',
-        `空闲 ${hours} 小时`,
+        'mt-auto hidden truncate text-[10px] leading-4 font-medium text-emerald-600/90 sm:block',
+        `空闲 ${formatDuration(freeMinutes)}`,
       ),
     );
   }
@@ -496,14 +508,14 @@ export function initApp(): void {
     const freeMinutes = total(free);
     const restMinutes = total(restSlots);
 
-    const parts = [`忙碌 ${formatDuration(busyMinutes)}（${blocks.length} 段）`];
+    // 没有安排的那天就不写「忙碌 0分钟」了
+    const parts: string[] = [];
+    if (blocks.length) parts.push(`忙碌 ${formatDuration(busyMinutes)}（${blocks.length} 段）`);
     if (restMinutes > 0) parts.push(`休息 ${formatDuration(restMinutes)}`);
     parts.push(`可约 ${formatDuration(freeMinutes)}`);
-    notice!.textContent = parts.join(' · ');
+    const prefix = blocks.length ? '' : `${date === today ? '今天' : '这一天'}没有安排 · `;
+    notice!.textContent = prefix + parts.join(' · ');
     notice!.className = 'mb-3 text-xs text-slate-400';
-    if (!blocks.length) {
-      notice!.textContent = `${date === today ? '今天' : '这一天'}没有安排 · ${notice!.textContent}`;
-    }
   }
 
   function renderWeek(): void {
