@@ -1,0 +1,133 @@
+---
+import '../styles/global.css';
+import scheduleData from '../data/schedule.json';
+import visitorsData from '../data/visitors.json';
+import { formatDateLabel, todayKey, type BusyEntry } from '../lib/schedule';
+import type { Visitor } from '../lib/access';
+
+// 一天的默认范围，改这里可以调整「全天空闲」的起止时间
+const range = { start: '08:00', end: '23:00' };
+
+const today = todayKey();
+
+// 把数据内嵌进页面，交给浏览器端渲染（静态站点，没有后端）
+const appData = JSON.stringify({
+  schedule: scheduleData as BusyEntry[],
+  visitors: visitorsData as Visitor[],
+  range,
+}).replace(/</g, '\\u003c');
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Personal Schedule · 我的时间表</title>
+    <meta name="description" content="个人时间表：查看我的忙碌与空闲时间" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗓️</text></svg>" />
+  </head>
+
+  <body class="min-h-screen">
+    <main class="mx-auto w-full max-w-2xl px-4 py-10 sm:py-16">
+      <!-- 标题 -->
+      <header class="mb-8">
+        <h1 class="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Personal Schedule</h1>
+        <p class="mt-1 text-sm text-slate-500">
+          今天是 <span id="today-line" class="font-medium text-slate-700">{formatDateLabel(today)}</span>
+        </p>
+      </header>
+
+      <!-- 姓名输入 -->
+      <form id="name-form" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" novalidate>
+        <label for="name-input" class="block text-sm font-medium text-slate-700">请输入姓名</label>
+        <div class="mt-2 flex flex-col gap-2 sm:flex-row">
+          <input
+            id="name-input"
+            name="name"
+            type="text"
+            autocomplete="name"
+            placeholder="例如：Alice"
+            class="w-full flex-1 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 focus:outline-none"
+          />
+          <button
+            type="submit"
+            class="w-full shrink-0 rounded-xl bg-slate-900 px-5 py-2.5 text-base font-medium text-white transition-colors hover:bg-slate-700 focus:ring-2 focus:ring-slate-300 focus:outline-none sm:w-auto"
+          >
+            查看时间
+          </button>
+        </div>
+        <p id="name-error" hidden class="mt-2 text-sm text-rose-600"></p>
+      </form>
+
+      <!-- 还没输入姓名 -->
+      <section id="empty-state" class="mt-8 rounded-2xl border border-dashed border-slate-200 px-4 py-12 text-center">
+        <p class="text-sm text-slate-400">输入姓名后即可查看时间安排</p>
+      </section>
+
+      <!-- 时间线 -->
+      <section id="result" hidden class="mt-8">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <span id="badge"></span>
+          <span class="text-xs text-slate-400">忙碌 / 空闲 自动计算</span>
+        </div>
+
+        <!-- 日期切换 -->
+        <div class="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+          <button
+            id="prev-day"
+            type="button"
+            aria-label="前一天"
+            class="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
+          >
+            ←<span class="ml-1 hidden sm:inline">前一天</span>
+          </button>
+
+          <div class="flex min-w-0 flex-col items-center">
+            <input
+              id="date-picker"
+              type="date"
+              aria-label="选择日期"
+              class="w-[9.5rem] rounded-lg bg-transparent text-center font-mono text-sm tabular-nums text-slate-900 focus:ring-2 focus:ring-slate-200 focus:outline-none"
+            />
+            <span id="date-label" class="mt-0.5 text-xs text-slate-400"></span>
+          </div>
+
+          <button
+            id="next-day"
+            type="button"
+            aria-label="后一天"
+            class="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
+          >
+            <span class="mr-1 hidden sm:inline">后一天</span>→
+          </button>
+        </div>
+
+        <button
+          id="today-button"
+          type="button"
+          hidden
+          class="mb-4 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100"
+        >
+          回到今天
+        </button>
+
+        <p id="notice" class="hidden"></p>
+
+        <ul id="timeline" class="space-y-2"></ul>
+      </section>
+
+      <footer class="mt-10 border-t border-slate-200 pt-4 text-xs leading-relaxed text-slate-400">
+        <p>静态网站，姓名仅用于前端显示控制，不要在此放置敏感信息。</p>
+      </footer>
+    </main>
+
+    <!-- 内嵌数据：改 src/data/*.json 即可 -->
+    <script type="application/json" id="app-data" is:inline set:html={appData}></script>
+
+    <script>
+      import { initApp } from '../scripts/app';
+      initApp();
+    </script>
+  </body>
+</html>
