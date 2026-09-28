@@ -37,7 +37,7 @@ jobs:
         run: npm run build
         env:
           # 仓库名 -> GitHub Pages 的子路径
-          BASE_PATH: /personal--schedule
+          BASE_PATH: /personal-schedule
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

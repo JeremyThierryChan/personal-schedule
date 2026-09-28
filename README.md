@@ -89,7 +89,7 @@ npm run preview    # 本地预览构建结果
 
 如果以后换了仓库，手动做两件事：
 
-1. 新建仓库，仓库名要和 `.github/workflows/deploy.yml` 里的 `BASE_PATH` 一致（当前是 `/personal--schedule`）。
+1. 新建仓库，仓库名要和 `.github/workflows/deploy.yml` 里的 `BASE_PATH` 一致（当前是 `/personal-schedule`）。
 2. 打开仓库 **Settings → Pages → Build and deployment → Source**，选择 **GitHub Actions**。
 
 ### 之后更新网站（平时只需要这三行）
@@ -101,7 +101,7 @@ git push
 ```
 
 推送后 GitHub Actions 会自动：`安装依赖 → astro build → 发布到 GitHub Pages`。
-大约 1 分钟后刷新 `https://jeremythierrychan.github.io/personal--schedule/` 即可看到更新（也可以在仓库的 **Actions** 标签页看构建进度）。
+大约 1 分钟后刷新 `https://jeremythierrychan.github.io/personal-schedule/` 即可看到更新（也可以在仓库的 **Actions** 标签页看构建进度）。
 
 > 换仓库名 / 换用户名：修改 `.github/workflows/deploy.yml` 里的 `BASE_PATH: /仓库名`，以及 `astro.config.mjs` 里的 `site`。
 
