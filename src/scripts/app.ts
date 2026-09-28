@@ -1,10 +1,8 @@
 /**
  * 首页交互逻辑（纯浏览器端）
  *
- * 只做三件事：
- * 1. 读取页面里内嵌的 schedule.json / visitors.json
- * 2. 根据输入的姓名决定显示「忙碌/空闲」还是「具体日程」
- * 3. 处理日期切换
+ * 设计原则：打开页面立刻能看到时间表（忙碌 / 空闲），不需要先输入姓名。
+ * 姓名验证是「可选」的一步：验证通过后才把「忙碌」换成具体活动名称。
  */
 import { resolveLevel, type Visitor } from '../lib/access';
 import {
@@ -54,12 +52,19 @@ function make<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-const BASE_ROW =
-  'flex items-stretch gap-3 rounded-xl border p-3 sm:gap-4 sm:p-4 transition-colors';
+const BASE_ROW = 'flex items-stretch gap-3 rounded-xl border p-3 sm:gap-4 sm:p-4 transition-colors';
 
 /** 生成一行时间线 */
-function renderSlot(slot: { start: string; end: string; busy: boolean; title: string }, authorized: boolean): HTMLLIElement {
-  const li = make('li', slot.busy ? `${BASE_ROW} border-slate-200 bg-white shadow-sm` : `${BASE_ROW} border-dashed border-slate-200 bg-white/50`);
+function renderSlot(
+  slot: { start: string; end: string; busy: boolean; title: string },
+  authorized: boolean,
+): HTMLLIElement {
+  const li = make(
+    'li',
+    slot.busy
+      ? `${BASE_ROW} border-slate-200 bg-white shadow-sm`
+      : `${BASE_ROW} border-dashed border-slate-200 bg-white/50`,
+  );
 
   // 左侧颜色条：忙碌 = 玫红，空闲 = 浅灰
   li.appendChild(make('span', `w-1.5 shrink-0 rounded-full ${slot.busy ? 'bg-rose-400' : 'bg-slate-200'}`));
@@ -77,11 +82,7 @@ function renderSlot(slot: { start: string; end: string; busy: boolean; title: st
         authorized ? slot.title : '忙碌',
       ),
     );
-    if (authorized) {
-      body.appendChild(make('div', 'mt-0.5 text-xs text-slate-400', '安排'));
-    } else {
-      body.appendChild(make('div', 'mt-0.5 text-xs text-slate-400', '这段时间没空'));
-    }
+    body.appendChild(make('div', 'mt-0.5 text-xs text-slate-400', authorized ? '安排' : '这段时间没空'));
   } else {
     body.appendChild(make('div', 'mt-1 text-base font-medium text-slate-400 sm:text-lg', '空闲'));
     body.appendChild(make('div', 'mt-0.5 text-xs text-slate-400', '可以约'));
@@ -93,43 +94,54 @@ function renderSlot(slot: { start: string; end: string; busy: boolean; title: st
 
 export function initApp(): void {
   const data = readData();
-  const result = byId<HTMLElement>('result');
-  const emptyState = byId<HTMLElement>('empty-state');
-  const form = byId<HTMLFormElement>('name-form');
-  const input = byId<HTMLInputElement>('name-input');
-  const error = byId<HTMLElement>('name-error');
+
+  const todayLine = byId<HTMLElement>('today-line');
   const dateLabel = byId<HTMLElement>('date-label');
   const datePicker = byId<HTMLInputElement>('date-picker');
   const timeline = byId<HTMLUListElement>('timeline');
-  const badge = byId<HTMLElement>('badge');
   const notice = byId<HTMLElement>('notice');
   const todayButton = byId<HTMLButtonElement>('today-button');
 
-  if (!data || !result || !emptyState || !form || !input || !dateLabel || !datePicker || !timeline || !badge || !notice) {
+  // 姓名验证相关
+  const authGuest = byId<HTMLElement>('auth-guest');
+  const authFull = byId<HTMLElement>('auth-full');
+  const guestHint = byId<HTMLElement>('guest-hint');
+  const authToggle = byId<HTMLButtonElement>('auth-toggle');
+  const authExit = byId<HTMLButtonElement>('auth-exit');
+  const authCancel = byId<HTMLButtonElement>('auth-cancel');
+  const form = byId<HTMLFormElement>('name-form');
+  const input = byId<HTMLInputElement>('name-input');
+  const error = byId<HTMLElement>('name-error');
+
+  if (
+    !data || !dateLabel || !datePicker || !timeline || !notice ||
+    !authGuest || !authFull || !guestHint || !authToggle || !form || !input
+  ) {
     return;
   }
 
   const today = todayKey();
   let date = today;
+  let formOpen = false;
   let name = '';
-
-  // 用浏览器本地日期覆盖构建时写死的日期
-  const todayLine = byId<HTMLElement>('today-line');
-  if (todayLine) todayLine.textContent = formatDateLabel(today);
+  /** 访客条上的提示文字（例如「未找到 XXX」），空字符串表示用默认文案 */
+  let hint = '';
 
   try {
     name = localStorage.getItem(STORAGE_KEY) ?? '';
   } catch {
     name = '';
   }
-  if (name) input.value = name;
+
+  const isAuthorized = (): boolean => name.trim() !== '' && resolveLevel(name, data.visitors) === 'full';
+
+  // 用浏览器本地日期覆盖构建时写死的日期
+  if (todayLine) todayLine.textContent = formatDateLabel(today);
 
   function renderTimeline(): void {
-    const authorized = name.trim() !== '' && resolveLevel(name, data!.visitors) === 'full';
-    const slots = buildTimeline(data!.schedule, date, data!.range);
-
+    const authorized = isAuthorized();
     timeline!.replaceChildren();
-    for (const slot of slots) {
+    for (const slot of buildTimeline(data!.schedule, date, data!.range)) {
       timeline!.appendChild(renderSlot(slot, authorized));
     }
 
@@ -139,7 +151,7 @@ export function initApp(): void {
     } else {
       notice!.textContent = date === today ? '今天没有安排 · 全天空闲' : '这一天没有安排 · 全天空闲';
       notice!.className =
-        'mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 text-center';
+        'mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-sm text-slate-500';
     }
   }
 
@@ -149,49 +161,83 @@ export function initApp(): void {
     if (todayButton) todayButton.hidden = date === today;
   }
 
-  function renderBadge(): void {
-    const authorized = resolveLevel(name, data!.visitors) === 'full';
-    if (authorized) {
-      badge!.textContent = '已授权访客 · 可以看到具体日程';
-      badge!.className =
-        'inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200';
-    } else {
-      badge!.textContent = '访客模式 · 只显示忙碌 / 空闲';
-      badge!.className =
-        'inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200';
+  /** 三种状态：访客条 / 展开的输入框 / 已授权条 */
+  function renderAuth(): void {
+    const authorized = isAuthorized();
+    authGuest!.hidden = authorized || formOpen;
+    form!.hidden = authorized || !formOpen;
+    authFull!.hidden = !authorized;
+    if (!authorized) {
+      if (guestHint) guestHint.textContent = hint || '访客视图 · 只显示忙碌 / 空闲';
+      input!.value = '';
     }
   }
 
-  function show(): void {
-    const submitted = name.trim() !== '';
-    emptyState!.hidden = submitted;
-    result!.hidden = !submitted;
-    if (!submitted) return;
-    renderBadge();
+  function render(): void {
     renderHeader();
     renderTimeline();
+    renderAuth();
   }
 
-  // 输入姓名 -> 查看时间
+  // 展开输入框
+  authToggle.addEventListener('click', () => {
+    formOpen = true;
+    hint = '';
+    renderAuth();
+    input.focus();
+  });
+
+  authCancel?.addEventListener('click', () => {
+    formOpen = false;
+    if (error) error.hidden = true;
+    renderAuth();
+  });
+
+  // 提交姓名
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const value = input.value.trim();
+
     if (!value) {
       if (error) {
-        error.textContent = '请输入你的姓名';
+        error.textContent = '请输入姓名';
         error.hidden = false;
       }
       input.focus();
       return;
     }
     if (error) error.hidden = true;
-    name = value;
-    try {
-      localStorage.setItem(STORAGE_KEY, name);
-    } catch {
-      /* 忽略：隐私模式下无法写入 */
+
+    if (resolveLevel(value, data.visitors) === 'full') {
+      // 验证通过：记住姓名，下次打开直接显示具体日程
+      name = value;
+      hint = '';
+      try {
+        localStorage.setItem(STORAGE_KEY, name);
+      } catch {
+        /* 隐私模式下写不进去，忽略 */
+      }
+    } else {
+      // 不在名单里：保持访客视图，给个提示，不记住
+      name = '';
+      hint = `未找到「${value}」，只能查看忙碌 / 空闲`;
     }
-    show();
+
+    formOpen = false;
+    render();
+  });
+
+  // 退出授权，回到访客视图
+  authExit?.addEventListener('click', () => {
+    name = '';
+    formOpen = false;
+    hint = '';
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* 忽略 */
+    }
+    render();
   });
 
   // 日期切换
@@ -223,5 +269,5 @@ export function initApp(): void {
     renderTimeline();
   });
 
-  show();
+  render();
 }
