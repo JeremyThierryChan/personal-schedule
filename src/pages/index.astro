@@ -113,13 +113,21 @@ const appData = JSON.stringify({
       <!-- 时间表：打开页面就能看到 -->
       <section id="result">
         <!-- 视图切换 -->
-        <div class="mb-3 flex items-center justify-between gap-2">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div class="inline-flex rounded-xl bg-slate-100 p-1">
             <button data-view="day" type="button" class="rounded-lg px-4 py-1.5 text-sm font-medium">日</button>
             <button data-view="week" type="button" class="rounded-lg px-4 py-1.5 text-sm font-medium">周</button>
             <button data-view="month" type="button" class="rounded-lg px-4 py-1.5 text-sm font-medium">月</button>
           </div>
-          <span class="text-xs text-slate-400">忙碌 / 空闲 自动计算</span>
+          <!-- 颜色说明 -->
+          <div class="flex items-center gap-3 text-[11px] text-slate-500">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-3 w-3 rounded bg-rose-100 ring-1 ring-rose-300"></span>忙碌
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-3 w-3 rounded bg-emerald-50 ring-1 ring-emerald-200"></span>空闲
+            </span>
+          </div>
         </div>
 
         <!-- 日期切换 -->
@@ -169,11 +177,11 @@ const appData = JSON.stringify({
 
         <p id="notice" class="hidden"></p>
 
-        <!-- 日视图 -->
-        <ul id="timeline" class="space-y-2"></ul>
+        <!-- 日视图：时间轴网格（方块高度 = 占用时间） -->
+        <div id="day-view" class="rounded-2xl border border-slate-200 bg-white px-1 py-3 shadow-sm sm:px-2"></div>
 
-        <!-- 周视图 -->
-        <div id="week-view" hidden class="space-y-2"></div>
+        <!-- 周视图：7 天横向铺开的时间轴网格 -->
+        <div id="week-view" hidden class="rounded-2xl border border-slate-200 bg-white px-1 py-3 shadow-sm sm:px-2"></div>
 
         <!-- 月视图 -->
         <div id="month-view" hidden class="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3">

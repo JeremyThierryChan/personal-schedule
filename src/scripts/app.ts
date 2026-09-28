@@ -4,7 +4,8 @@
  * 设计原则：
  * 1. 打开页面立刻能看到时间表（忙碌 / 空闲），不需要先输入姓名。
  * 2. 姓名验证是「可选」的一步：验证通过后才把「忙碌」换成具体活动名称。
- * 3. 支持 日 / 周 / 月 三种视图，共用一个「锚点日期」。
+ * 3. 日 / 周 是时间轴网格（方块的高度和位置 = 占用时间的长短，苹果日历那样），
+ *    月 是日历格子。颜色语言统一：玫红 = 忙碌，浅绿 = 空闲。
  */
 import { resolveLevel, type Visitor } from '../lib/access';
 import {
@@ -14,18 +15,21 @@ import {
   formatDuration,
   formatMonthLabel,
   formatWeekLabel,
+  hourMarks,
   isValidDateKey,
+  layoutDay,
   monthGrid,
   monthKey,
+  nowPosition,
   shiftDateKey,
   splitSlots,
+  timePercent,
   todayKey,
-  totalMinutes,
   weekDates,
   weekdayName,
   type BusyEntry,
   type DayRange,
-  type Slot,
+  type PositionedBlock,
 } from '../lib/schedule';
 
 interface AppData {
@@ -37,6 +41,9 @@ interface AppData {
 type View = 'day' | 'week' | 'month';
 
 const STORAGE_KEY = 'personal-schedule:name';
+
+/** 时间轴容器高度：手机上矮一点，桌面高一点 */
+const GRID_HEIGHT = 'h-[720px] sm:h-[920px]';
 
 /** 从 <script id="app-data"> 里读取数据 */
 function readData(): AppData | null {
@@ -66,137 +73,232 @@ function make<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-const CARD = 'rounded-xl border border-slate-200 bg-white shadow-sm';
-
-/* ---------------- 日视图：一行时间线 ---------------- */
-
-function renderSlot(slot: Slot, authorized: boolean): HTMLLIElement {
-  const li = make(
-    'li',
-    slot.busy
-      ? `flex items-stretch gap-3 border-slate-200 bg-white p-3 shadow-sm transition-colors sm:gap-4 sm:p-4 ${CARD}`
-      : 'flex items-stretch gap-3 rounded-xl border border-dashed border-slate-200 bg-white/50 p-3 sm:gap-4 sm:p-4',
-  );
-
-  // 左侧颜色条：忙碌 = 玫红，空闲 = 浅灰
-  li.appendChild(make('span', `w-1.5 shrink-0 rounded-full ${slot.busy ? 'bg-rose-400' : 'bg-slate-200'}`));
-
-  const body = make('div', 'min-w-0 flex-1');
-  body.appendChild(
-    make('div', 'font-mono text-xs tabular-nums text-slate-500 sm:text-sm', `${slot.start} – ${slot.end}`),
-  );
-
-  if (slot.busy) {
-    body.appendChild(
-      make('div', 'mt-1 truncate text-base font-medium text-slate-900 sm:text-lg', authorized ? slot.title : '忙碌'),
-    );
-    body.appendChild(make('div', 'mt-0.5 text-xs text-slate-400', authorized ? '安排' : '这段时间没空'));
-  } else {
-    body.appendChild(make('div', 'mt-1 text-base font-medium text-slate-400 sm:text-lg', '空闲'));
-    body.appendChild(make('div', 'mt-0.5 text-xs text-slate-400', '可以约'));
+/** 用百分比定位一个方块 */
+function place(el: HTMLElement, top: number, height: number, left?: number, width?: number): void {
+  el.style.top = `${top}%`;
+  el.style.height = `${height}%`;
+  if (left !== undefined && width !== undefined) {
+    el.style.left = `calc(${left}% + 2px)`;
+    el.style.width = `calc(${width}% - 4px)`;
   }
-
-  li.appendChild(body);
-  return li;
 }
 
-/* ---------------- 周 / 月视图 ---------------- */
+/* ================= 日视图 / 周视图：时间轴网格 ================= */
 
-/** 周视图里的一天 */
-function renderWeekCard(date: string, authorized: boolean, today: string, slots: Slot[]): HTMLButtonElement {
-  const card = make('button', `${CARD} w-full p-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50`);
-  card.type = 'button';
-  card.dataset.date = date;
-  if (date === today) card.classList.add('ring-1', 'ring-rose-300');
+/**
+ * 画一个时间轴网格。
+ * days.length === 1 是日视图（一列），=== 7 是周视图（七列横向铺开）。
+ */
+function renderTimeGrid(
+  days: string[],
+  opts: { authorized: boolean; today: string; schedule: BusyEntry[]; range: DayRange },
+): HTMLElement {
+  const { authorized, today, schedule, range } = opts;
+  const multi = days.length > 1;
+  const marks = hourMarks(range);
 
-  const { busy, free } = splitSlots(slots);
+  // 周视图在手机上放不下 7 列，允许横向滚动
+  const scroller = make('div', multi ? '-mx-1 overflow-x-auto px-1 pb-1' : '');
+  const inner = make('div', multi ? 'min-w-[620px]' : '');
+  scroller.appendChild(inner);
 
-  const head = make('div', 'flex items-baseline justify-between gap-2');
-  head.appendChild(
-    make(
-      'span',
-      `text-sm font-medium ${date === today ? 'text-rose-600' : 'text-slate-900'}`,
-      `${weekdayName(date)} ${date.slice(5)}`,
-    ),
-  );
-  head.appendChild(
-    make('span', 'shrink-0 text-xs text-slate-400', busy.length ? `忙碌 ${formatDuration(totalMinutes(busy))}` : '全天空闲'),
-  );
-  card.appendChild(head);
-
-  if (busy.length) {
-    const chips = make('div', 'mt-2 flex flex-wrap gap-1.5');
-    for (const slot of busy) {
-      chips.appendChild(
+  // ---- 表头（只有周视图需要，日视图的日期在导航栏里）----
+  if (multi) {
+    const head = make('div', 'flex items-end');
+    head.appendChild(make('div', 'w-10 shrink-0 sm:w-12'));
+    const headRow = make('div', 'flex flex-1');
+    for (const d of days) {
+      const isToday = d === today;
+      const btn = make(
+        'button',
+        `flex-1 rounded-t-lg border-b-2 px-1 pb-1.5 pt-1 text-center transition-colors hover:bg-slate-50 ${
+          isToday ? 'border-rose-400' : 'border-transparent'
+        }`,
+      );
+      btn.type = 'button';
+      btn.dataset.date = d;
+      btn.appendChild(make('div', 'text-[10px] text-slate-400 sm:text-xs', weekdayName(d)));
+      btn.appendChild(
         make(
-          'span',
-          'rounded-lg bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-100',
-          `${slot.start}–${slot.end} ${authorized && slot.title ? slot.title : '忙碌'}`,
+          'div',
+          `text-xs font-semibold sm:text-sm ${isToday ? 'text-rose-600' : 'text-slate-900'}`,
+          `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`,
         ),
       );
+      headRow.appendChild(btn);
     }
-    card.appendChild(chips);
+    head.appendChild(headRow);
+    inner.appendChild(head);
   }
 
-  if (free.length) {
-    card.appendChild(
-      make('div', 'mt-1.5 text-xs leading-relaxed text-slate-400', `空闲 ${free.map((s) => `${s.start}–${s.end}`).join(' · ')}`),
+  // ---- 网格主体 ----
+  const grid = make('div', `flex ${GRID_HEIGHT}`);
+
+  // 左侧时间刻度
+  const gutter = make('div', 'relative w-10 shrink-0 sm:w-12');
+  for (const mark of marks) {
+    const label = make(
+      'div',
+      'absolute right-1.5 -translate-y-1/2 font-mono text-[10px] tabular-nums text-slate-400 sm:text-xs',
+      mark.time,
     );
+    label.style.top = `${mark.top}%`;
+    label.dataset.hourLabel = '1';
+    // 手机上隔一小时显示一个刻度，免得挤在一起
+    if (Number(mark.time.slice(0, 2)) % 2 !== 0) label.classList.add('hidden', 'sm:block');
+    gutter.appendChild(label);
+  }
+  grid.appendChild(gutter);
+
+  // 右侧：所有列共用的容器
+  const body = make('div', 'relative flex flex-1 border-t border-slate-100');
+
+  // 整点横线
+  for (const mark of marks) {
+    const line = make('div', 'pointer-events-none absolute inset-x-0 z-0 border-t border-slate-100');
+    line.style.top = `${mark.top}%`;
+    body.appendChild(line);
   }
 
-  return card;
+  // 每一天一列
+  for (const d of days) {
+    const isToday = d === today;
+    const col = make(
+      'div',
+      `relative min-w-0 flex-1 border-l border-slate-100 first:border-l-0 ${isToday ? 'bg-rose-50/40' : ''}`,
+    );
+    if (multi) col.dataset.date = d; // 周视图：点某一列跳到那天
+
+    // 1) 背景层：自动算出来的空闲时段（浅绿）
+    const { free } = splitSlots(buildTimeline(schedule, d, range));
+    for (const slot of free) {
+      const top = timePercent(slot.start, range);
+      const height = timePercent(slot.end, range) - top;
+      const freeBox = make('div', 'absolute inset-x-0.5 z-0 rounded-md bg-emerald-50 ring-1 ring-emerald-100');
+      freeBox.dataset.free = '1';
+      place(freeBox, top, height);
+      if (height >= 5) {
+        freeBox.appendChild(make('div', 'px-1.5 pt-0.5 text-[10px] font-medium text-emerald-600/90', '空闲'));
+      }
+      col.appendChild(freeBox);
+    }
+
+    // 2) 前景层：日程方块（高度和位置 = 占用的时间长短）
+    for (const block of layoutDay(schedule, d, range)) {
+      const card = make(
+        'div',
+        'absolute z-10 overflow-hidden rounded-md border border-rose-300 bg-rose-100 px-1.5 py-0.5 shadow-sm',
+      );
+      place(card, block.top, block.height, block.left, block.width);
+      card.style.minHeight = '17px';
+      card.dataset.block = '1';
+      card.title = `${block.start}–${block.end} ${authorized && block.title ? block.title : '忙碌'}`;
+
+      card.appendChild(
+        make(
+          'div',
+          'truncate text-[10px] font-medium leading-tight text-rose-900 sm:text-xs',
+          authorized && block.title ? block.title : '忙碌',
+        ),
+      );
+      // 方块够高才放得下时间
+      if (block.duration >= 60) {
+        card.appendChild(
+          make(
+            'div',
+            'truncate font-mono text-[9px] leading-tight text-rose-600/90 tabular-nums sm:text-[10px]',
+            `${block.start}–${block.end}`,
+          ),
+        );
+      }
+      col.appendChild(card);
+    }
+
+    // 3) 今天：一条「现在」的红线
+    if (isToday) {
+      const pos = nowPosition(range);
+      if (pos !== null) {
+        const nowLine = make('div', 'pointer-events-none absolute inset-x-0 z-20 border-t-2 border-rose-500');
+        nowLine.dataset.nowLine = '1';
+        nowLine.style.top = `${pos}%`;
+        nowLine.appendChild(make('span', 'absolute -left-[3px] -top-[4px] h-2 w-2 rounded-full bg-rose-500'));
+        col.appendChild(nowLine);
+      }
+    }
+
+    body.appendChild(col);
+  }
+
+  grid.appendChild(body);
+  inner.appendChild(grid);
+  return scroller;
 }
 
-/** 月视图里的一格 */
+/* ================= 月视图 ================= */
+
 function renderMonthCell(
   cell: { date: string; inMonth: boolean },
   authorized: boolean,
   today: string,
-  slots: Slot[],
+  blocks: PositionedBlock[],
 ): HTMLButtonElement {
+  const isToday = cell.date === today;
+  const busy = blocks.length > 0;
+
   const btn = make(
     'button',
-    `flex min-h-[3.25rem] flex-col items-stretch rounded-lg border p-1.5 text-left transition-colors sm:min-h-[4.5rem] ${
-      cell.inMonth ? 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50' : 'border-transparent bg-slate-50/50'
+    `flex min-h-[3.25rem] flex-col rounded-lg border p-1 text-left transition-colors sm:min-h-[5.5rem] ${
+      cell.inMonth
+        ? busy
+          ? 'border-slate-200 bg-white hover:border-slate-300'
+          : 'border-emerald-100 bg-emerald-50/70 hover:border-emerald-200'
+        : 'border-transparent bg-slate-50 opacity-50'
     }`,
   );
   btn.type = 'button';
   btn.dataset.date = cell.date;
-  if (!cell.inMonth) btn.classList.add('opacity-50');
 
-  const { busy } = splitSlots(slots);
-
-  const top = make('div', 'flex items-center justify-between gap-1');
-  const dayNumber = Number(cell.date.slice(8));
-  top.appendChild(
+  btn.appendChild(
     make(
-      'span',
-      cell.date === today
-        ? 'flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[11px] font-semibold text-white'
+      'div',
+      isToday
+        ? 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-500 text-[11px] font-semibold text-white'
         : 'text-[11px] font-medium text-slate-600 sm:text-xs',
-      String(dayNumber),
+      String(Number(cell.date.slice(8, 10))),
     ),
   );
-  if (busy.length) {
-    top.appendChild(
+
+  // 手机上只显示圆点（屏幕太窄，放不下文字）
+  if (busy && cell.inMonth) {
+    btn.appendChild(
       make(
-        'span',
-        'text-[9px] leading-none text-rose-400 sm:text-[10px]',
-        busy.length > 3 ? '●●●+' : '●'.repeat(busy.length),
+        'div',
+        'mt-auto text-[9px] leading-none tracking-tight text-rose-400 sm:hidden',
+        blocks.length > 3 ? '●●●' : '●'.repeat(blocks.length),
       ),
     );
   }
-  btn.appendChild(top);
 
-  // 手机屏幕太窄，活动名称只在 sm 以上显示
-  if (authorized && busy[0]?.title) {
-    btn.appendChild(make('span', 'mt-1 hidden truncate text-[10px] text-slate-500 sm:block', busy[0].title));
-  } else if (!busy.length) {
-    btn.appendChild(make('span', 'mt-1 hidden text-[10px] text-slate-300 sm:block', '空闲'));
+  // 电脑上显示前两个日程（苹果日历那样的小色条）
+  if (cell.inMonth) {
+    for (const block of blocks.slice(0, 2)) {
+      btn.appendChild(
+        make(
+          'div',
+          'mt-0.5 hidden truncate rounded bg-rose-100 px-1 text-[10px] leading-4 text-rose-700 sm:block',
+          `${block.start} ${authorized && block.title ? block.title : '忙碌'}`,
+        ),
+      );
+    }
+    if (blocks.length > 2) {
+      btn.appendChild(make('div', 'hidden text-[10px] leading-4 text-slate-400 sm:block', `+${blocks.length - 2}`));
+    }
   }
 
   return btn;
 }
+
+/* ================= 主逻辑 ================= */
 
 export function initApp(): void {
   const data = readData();
@@ -208,10 +310,10 @@ export function initApp(): void {
   const navRange = byId<HTMLElement>('nav-range');
   const rangeLabel = byId<HTMLElement>('range-label');
   const rangeSub = byId<HTMLElement>('range-sub');
-  const timeline = byId<HTMLUListElement>('timeline');
+  const dayView = byId<HTMLElement>('day-view');
   const weekView = byId<HTMLElement>('week-view');
-  const monthGridEl = byId<HTMLElement>('month-grid');
   const monthView = byId<HTMLElement>('month-view');
+  const monthGridEl = byId<HTMLElement>('month-grid');
   const notice = byId<HTMLElement>('notice');
   const todayButton = byId<HTMLButtonElement>('today-button');
   const prevButton = byId<HTMLButtonElement>('prev-day');
@@ -229,8 +331,8 @@ export function initApp(): void {
   const error = byId<HTMLElement>('name-error');
 
   if (
-    !data || !dateLabel || !datePicker || !timeline || !notice || !weekView || !monthView ||
-    !monthGridEl || !navDay || !navRange || !rangeLabel || !prevButton || !nextButton ||
+    !data || !dateLabel || !datePicker || !dayView || !weekView || !monthView || !monthGridEl ||
+    !notice || !navDay || !navRange || !rangeLabel || !prevButton || !nextButton ||
     !authGuest || !authFull || !guestHint || !authToggle || !form || !input
   ) {
     return;
@@ -259,31 +361,31 @@ export function initApp(): void {
   /* ---------------- 渲染 ---------------- */
 
   function renderDay(): void {
-    const authorized = isAuthorized();
-    const slots = buildTimeline(app.schedule, date, app.range);
-    const { busy } = splitSlots(slots);
+    const blocks = layoutDay(app.schedule, date, app.range);
+    dayView!.replaceChildren(
+      renderTimeGrid([date], { authorized: isAuthorized(), today, schedule: app.schedule, range: app.range }),
+    );
 
-    timeline!.replaceChildren();
-    for (const slot of slots) {
-      timeline!.appendChild(renderSlot(slot, authorized));
-    }
-
-    if (busy.length) {
-      notice!.textContent = `忙碌 ${formatDuration(totalMinutes(busy))}（${busy.length} 段安排）`;
+    if (blocks.length) {
+      const minutes = blocks.reduce((sum, b) => sum + b.duration, 0);
+      notice!.textContent = `这一天忙碌 ${formatDuration(minutes)}（${blocks.length} 段安排）`;
       notice!.className = 'mb-3 text-xs text-slate-400';
     } else {
       notice!.textContent = date === today ? '今天没有安排 · 全天空闲' : '这一天没有安排 · 全天空闲';
       notice!.className =
-        'mb-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-sm text-slate-500';
+        'mb-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-center text-sm text-emerald-700';
     }
   }
 
   function renderWeek(): void {
-    const authorized = isAuthorized();
-    weekView!.replaceChildren();
-    for (const d of weekDates(date)) {
-      weekView!.appendChild(renderWeekCard(d, authorized, today, buildTimeline(app.schedule, d, app.range)));
-    }
+    weekView!.replaceChildren(
+      renderTimeGrid(weekDates(date), {
+        authorized: isAuthorized(),
+        today,
+        schedule: app.schedule,
+        range: app.range,
+      }),
+    );
   }
 
   function renderMonth(): void {
@@ -291,12 +393,11 @@ export function initApp(): void {
     monthGridEl!.replaceChildren();
     for (const cell of monthGrid(date)) {
       monthGridEl!.appendChild(
-        renderMonthCell(cell, authorized, today, buildTimeline(app.schedule, cell.date, app.range)),
+        renderMonthCell(cell, authorized, today, layoutDay(app.schedule, cell.date, app.range)),
       );
     }
   }
 
-  /** 导航栏中间的标题 + 前后按钮 */
   function renderNav(): void {
     navDay!.hidden = view !== 'day';
     navRange!.hidden = view === 'day';
@@ -309,7 +410,7 @@ export function initApp(): void {
       rangeSub!.textContent = `${date.slice(0, 4)}年 · 周一 – 周日`;
     } else {
       rangeLabel!.textContent = formatMonthLabel(date);
-      rangeSub!.textContent = '点击某一天查看当天详情';
+      rangeSub!.textContent = '点某一天查看当天详情';
     }
 
     prevButton!.setAttribute('aria-label', view === 'day' ? '前一天' : view === 'week' ? '前一周' : '前一月');
@@ -324,7 +425,6 @@ export function initApp(): void {
     if (todayButton) todayButton.hidden = containsToday;
   }
 
-  /** 视图切换按钮的高亮 */
   function renderViewButtons(): void {
     for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-view]')) {
       const active = btn.dataset.view === view;
@@ -333,12 +433,11 @@ export function initApp(): void {
       }`;
       btn.setAttribute('aria-pressed', String(active));
     }
+    dayView!.hidden = view !== 'day';
     weekView!.hidden = view !== 'week';
     monthView!.hidden = view !== 'month';
-    timeline!.hidden = view !== 'day';
   }
 
-  /** 三种状态：访客条 / 展开的输入框 / 已授权条 */
   function renderAuth(): void {
     const authorized = isAuthorized();
     authGuest!.hidden = authorized || formOpen;
@@ -350,16 +449,6 @@ export function initApp(): void {
     }
   }
 
-  function render(): void {
-    renderNav();
-    renderViewButtons();
-    renderDay();
-    renderWeek();
-    renderMonth();
-    renderAuth();
-  }
-
-  /** 只重画内容，不动输入状态 */
   function renderContent(): void {
     renderNav();
     renderViewButtons();
@@ -368,9 +457,13 @@ export function initApp(): void {
     renderMonth();
   }
 
+  function render(): void {
+    renderContent();
+    renderAuth();
+  }
+
   /* ---------------- 事件 ---------------- */
 
-  // 视图切换
   for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-view]')) {
     btn.addEventListener('click', () => {
       view = btn.dataset.view as View;
@@ -378,18 +471,24 @@ export function initApp(): void {
     });
   }
 
-  // 点周视图的某一天 / 月视图的某一格 -> 进入那天的日视图
-  for (const container of [weekView, monthView]) {
-    container.addEventListener('click', (event) => {
-      const target = (event.target as HTMLElement).closest<HTMLElement>('[data-date]');
-      if (!target?.dataset.date) return;
-      date = target.dataset.date;
-      view = 'day';
-      renderContent();
-    });
-  }
+  // 周视图：点表头或某一列 -> 跳到那天的日视图
+  weekView.addEventListener('click', (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>('[data-date]');
+    if (!target?.dataset.date) return;
+    date = target.dataset.date;
+    view = 'day';
+    renderContent();
+  });
 
-  // 展开输入框
+  // 月视图：点某一格 -> 跳到那天的日视图
+  monthView.addEventListener('click', (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>('[data-date]');
+    if (!target?.dataset.date) return;
+    date = target.dataset.date;
+    view = 'day';
+    renderContent();
+  });
+
   authToggle.addEventListener('click', () => {
     formOpen = true;
     hint = '';
@@ -403,7 +502,6 @@ export function initApp(): void {
     renderAuth();
   });
 
-  // 提交姓名
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const value = input.value.trim();
@@ -419,7 +517,6 @@ export function initApp(): void {
     if (error) error.hidden = true;
 
     if (resolveLevel(value, app.visitors) === 'full') {
-      // 验证通过：记住姓名，下次打开直接显示具体日程
       name = value;
       hint = '';
       try {
@@ -428,7 +525,6 @@ export function initApp(): void {
         /* 隐私模式下写不进去，忽略 */
       }
     } else {
-      // 不在名单里：保持访客视图，给个提示，不记住
       name = '';
       hint = `未找到「${value}」，只能查看忙碌 / 空闲`;
     }
@@ -437,7 +533,6 @@ export function initApp(): void {
     render();
   });
 
-  // 退出授权，回到访客视图
   authExit?.addEventListener('click', () => {
     name = '';
     formOpen = false;
@@ -450,7 +545,7 @@ export function initApp(): void {
     render();
   });
 
-  // 日期导航：步长跟着视图走
+  // 导航：步长跟着视图走
   prevButton.addEventListener('click', () => {
     date = view === 'month' ? addMonths(date, -1) : shiftDateKey(date, view === 'week' ? -7 : -1);
     renderContent();
@@ -476,4 +571,17 @@ export function initApp(): void {
   });
 
   render();
+
+  // 每分钟挪一下「现在」红线（只改位置、不重画，免得周视图的横向滚动跳回去）
+  window.setInterval(() => {
+    const pos = nowPosition(app.range);
+    for (const el of document.querySelectorAll<HTMLElement>('[data-now-line]')) {
+      if (pos === null) {
+        el.style.display = 'none';
+      } else {
+        el.style.display = '';
+        el.style.top = `${pos}%`;
+      }
+    }
+  }, 60_000);
 }

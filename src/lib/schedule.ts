@@ -228,3 +228,121 @@ export function formatDuration(minutes: number): string {
   if (hours >= 1) return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} 小时`;
   return `${minutes} 分钟`;
 }
+
+/* ---------- 日历网格布局（Apple 日历那种：位置 + 高度表示时间） ---------- */
+
+/** 一个已经算好位置和大小的日程方块，数值都是相对整个时间轴的百分比 */
+export interface PositionedBlock {
+  title: string;
+  start: string;
+  end: string;
+  /** 距离时间轴顶部的位置，0-100 */
+  top: number;
+  /** 高度，0-100 */
+  height: number;
+  /** 横向位置，0-100（处理时间重叠时并排显示） */
+  left: number;
+  /** 横向宽度，0-100 */
+  width: number;
+  /** 时长（分钟），用来决定方块里能不能放下文字 */
+  duration: number;
+}
+
+/**
+ * 把某一天的日程排成日历方块。
+ *
+ * - top / height 按时间比例计算，所以「方块大小 = 占用时间长短」
+ * - 时间重叠的日程会横向并排（同一簇里平分宽度），不会互相盖住
+ */
+export function layoutDay(entries: BusyEntry[], date: string, range: DayRange): PositionedBlock[] {
+  const rangeStart = parseTime(range.start);
+  const rangeEnd = parseTime(range.end);
+  const total = rangeEnd - rangeStart;
+  if (total <= 0) return [];
+
+  const blocks = entriesForDate(entries, date)
+    .map((e) => ({
+      title: e.title,
+      start: Math.max(parseTime(e.start), rangeStart),
+      end: Math.min(parseTime(e.end), rangeEnd),
+    }))
+    .filter((b) => b.end > b.start)
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+
+  // 1. 按「互相重叠」分成若干簇
+  const clusters: { title: string; start: number; end: number }[][] = [];
+  let cluster: { title: string; start: number; end: number }[] = [];
+  let clusterEnd = -1;
+  for (const block of blocks) {
+    if (cluster.length && block.start >= clusterEnd) {
+      clusters.push(cluster);
+      cluster = [];
+      clusterEnd = -1;
+    }
+    cluster.push(block);
+    clusterEnd = Math.max(clusterEnd, block.end);
+  }
+  if (cluster.length) clusters.push(cluster);
+
+  // 2. 簇内尽量塞进已有的列，塞不下就新开一列
+  const result: PositionedBlock[] = [];
+  for (const group of clusters) {
+    const columnEnds: number[] = [];
+    const placed: { block: (typeof group)[number]; column: number }[] = [];
+
+    for (const block of group) {
+      let column = columnEnds.findIndex((end) => end <= block.start);
+      if (column === -1) {
+        column = columnEnds.length;
+        columnEnds.push(0);
+      }
+      columnEnds[column] = block.end;
+      placed.push({ block, column });
+    }
+
+    const columns = columnEnds.length;
+    for (const { block, column } of placed) {
+      result.push({
+        title: block.title,
+        start: formatTime(block.start),
+        end: formatTime(block.end),
+        top: ((block.start - rangeStart) / total) * 100,
+        height: ((block.end - block.start) / total) * 100,
+        left: (column / columns) * 100,
+        width: 100 / columns,
+        duration: block.end - block.start,
+      });
+    }
+  }
+
+  return result;
+}
+
+/** 把某个时间点换算成时间轴上的百分比位置（0-100） */
+export function timePercent(time: string, range: DayRange): number {
+  const start = parseTime(range.start);
+  const end = parseTime(range.end);
+  return ((parseTime(time) - start) / (end - start)) * 100;
+}
+
+/** 时间轴上要显示的整点，例如 ['08:00', '09:00', ...] */
+export function hourMarks(range: DayRange): { time: string; top: number }[] {
+  const start = parseTime(range.start);
+  const end = parseTime(range.end);
+  const total = end - start;
+  const first = Math.ceil(start / 60) * 60;
+  const marks: { time: string; top: number }[] = [];
+  for (let m = first; m <= end; m += 60) {
+    marks.push({ time: formatTime(m), top: ((m - start) / total) * 100 });
+  }
+  return marks;
+}
+
+/** 当前时间在时间轴上的位置（0-100），不在今天的范围内就返回 null */
+export function nowPosition(range: DayRange, now: Date = new Date()): number | null {
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const start = parseTime(range.start);
+  const end = parseTime(range.end);
+  if (minutes < start || minutes > end) return null;
+  return ((minutes - start) / (end - start)) * 100;
+}
