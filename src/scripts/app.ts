@@ -18,6 +18,7 @@ import {
   formatDuration,
   formatDurationShort,
   formatMonthLabel,
+  formatTime,
   formatWeekLabel,
   hourMarks,
   isValidDateKey,
@@ -57,6 +58,11 @@ const STORAGE_KEY = 'personal-schedule:name';
  */
 const GRID_HEIGHT = 'h-[940px] sm:h-[1100px]';
 
+/** 「最近可约」：往后找多少天、最多列几条、少于多久不算可约 */
+const NEXT_FREE_DAYS = 14;
+const NEXT_FREE_COUNT = 3;
+const NEXT_FREE_MIN_MINUTES = 60;
+
 /**
  * 周视图表头高度。左边时间轴要留出同样高度的空位，
  * 两边才能对齐 —— 所以这里用固定高度，而不是靠内边距撑。
@@ -85,6 +91,14 @@ function byId<T extends HTMLElement>(id: string): T | null {
  */
 function timeLabel(time: string): string {
   return time === '24:00' ? '23:59' : time;
+}
+
+/** 「最近可约」里的日期叫法：今天 / 明天 / 9月30日 周三 */
+function dayLabel(date: string, daysFromToday: number): string {
+  if (daysFromToday === 0) return '今天';
+  if (daysFromToday === 1) return '明天';
+  const [, month, day] = date.split('-');
+  return `${Number(month)}月${Number(day)}日 ${weekdayName(date)}`;
 }
 
 /** 小工具：创建元素，避免用 innerHTML 拼接用户输入 */
@@ -443,6 +457,7 @@ export function initApp(): void {
   const monthGridEl = byId<HTMLElement>('month-grid');
   const notice = byId<HTMLElement>('notice');
   const todayButton = byId<HTMLButtonElement>('today-button');
+  const nextFreeList = byId<HTMLElement>('next-free-list');
   const prevButton = byId<HTMLButtonElement>('prev-day');
   const nextButton = byId<HTMLButtonElement>('next-day');
 
@@ -581,6 +596,55 @@ export function initApp(): void {
     monthView!.hidden = view !== 'month';
   }
 
+  /**
+   * 「最近可约」：从**现在**（北京时间）开始往后找，列出最近几个够长的空闲时段。
+   * 注意它跟正在看的日期无关 —— 永远相对此刻。
+   */
+  function renderNextFree(): void {
+    if (!nextFreeList) return;
+
+    const nowMinutes = beijingMinutesOfDay();
+    const found: { label: string; start: string; end: string; minutes: number }[] = [];
+
+    for (let i = 0; i < NEXT_FREE_DAYS && found.length < NEXT_FREE_COUNT; i++) {
+      const day = shiftDateKey(today, i);
+      const { free } = splitSlots(buildTimeline(app.schedule, day, app.range, app.rest));
+
+      for (const slot of free) {
+        // 今天只算「现在之后」的那部分
+        const start = i === 0 ? Math.max(parseTime(slot.start), nowMinutes) : parseTime(slot.start);
+        const end = parseTime(slot.end);
+        if (end - start < NEXT_FREE_MIN_MINUTES) continue;
+
+        found.push({
+          label: dayLabel(day, i),
+          start: timeLabel(formatTime(start)),
+          end: timeLabel(formatTime(end)),
+          minutes: end - start,
+        });
+        if (found.length >= NEXT_FREE_COUNT) break;
+      }
+    }
+
+    nextFreeList.replaceChildren();
+    if (!found.length) {
+      nextFreeList.appendChild(
+        make('div', 'text-sm text-emerald-800/80', `最近 ${NEXT_FREE_DAYS} 天都排满了，可以联系我看看有没有别的办法`),
+      );
+      return;
+    }
+
+    for (const slot of found) {
+      const row = make('div', 'flex flex-wrap items-baseline gap-x-2 text-sm');
+      row.appendChild(make('span', 'font-medium text-emerald-900', slot.label));
+      row.appendChild(
+        make('span', 'font-mono text-xs tabular-nums text-emerald-800 sm:text-sm', `${slot.start}–${slot.end}`),
+      );
+      row.appendChild(make('span', 'text-xs text-emerald-600/80', `可约 ${formatDuration(slot.minutes)}`));
+      nextFreeList.appendChild(row);
+    }
+  }
+
   function renderAuth(): void {
     const authorized = isAuthorized();
     authGuest!.hidden = authorized || formOpen;
@@ -595,6 +659,7 @@ export function initApp(): void {
   function renderContent(): void {
     renderNav();
     renderViewButtons();
+    renderNextFree();
     renderDay();
     renderWeek();
     renderMonth();
@@ -735,8 +800,10 @@ export function initApp(): void {
 
   render();
 
-  // 每分钟挪一下「现在」红线（只改位置、不重画，免得滚动位置跳回去）
+  // 每分钟挪一下「现在」红线、刷新「最近可约」
+  // （只改这些小东西，不整体重画，免得滚动位置跳回去）
   window.setInterval(() => {
+    renderNextFree();
     const pos = nowPosition(app.range);
     for (const el of document.querySelectorAll<HTMLElement>('[data-now-line]')) {
       if (pos === null) {
