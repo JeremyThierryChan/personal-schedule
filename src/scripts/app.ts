@@ -629,19 +629,21 @@ export function initApp(): void {
     nextFreeList.replaceChildren();
     if (!found.length) {
       nextFreeList.appendChild(
-        make('div', 'text-sm text-emerald-800/80', `最近 ${NEXT_FREE_DAYS} 天都排满了，可以联系我看看有没有别的办法`),
+        make('span', 'text-emerald-800/80', `最近 ${NEXT_FREE_DAYS} 天都排满了，可以直接联系我`),
       );
       return;
     }
 
-    for (const slot of found) {
-      const row = make('div', 'flex flex-wrap items-baseline gap-x-2 text-sm');
-      row.appendChild(make('span', 'font-medium text-emerald-900', slot.label));
-      row.appendChild(
-        make('span', 'font-mono text-xs tabular-nums text-emerald-800 sm:text-sm', `${slot.start}–${slot.end}`),
-      );
-      row.appendChild(make('span', 'text-xs text-emerald-600/80', `可约 ${formatDuration(slot.minutes)}`));
-      nextFreeList.appendChild(row);
+    // header 里的信息栏很窄，所以排成一行：日期 时间段（时长） · 日期 时间段（时长）
+    // 手机上只保留最近的一条（其余的用 CSS 隐藏），免得 header 太高
+    for (const [index, slot] of found.entries()) {
+      if (index > 0) nextFreeList.appendChild(make('span', 'hidden text-emerald-300 sm:inline', '·'));
+
+      const chip = make('span', `items-baseline gap-x-1.5 ${index > 0 ? 'hidden sm:inline-flex' : 'inline-flex'}`);
+      chip.appendChild(make('span', 'font-medium text-emerald-900', slot.label));
+      chip.appendChild(make('span', 'font-mono tabular-nums text-emerald-800', `${slot.start}–${slot.end}`));
+      chip.appendChild(make('span', 'text-emerald-600/80', `（${formatDuration(slot.minutes)}）`));
+      nextFreeList.appendChild(chip);
     }
   }
 
@@ -651,7 +653,7 @@ export function initApp(): void {
     form!.hidden = authorized || !formOpen;
     authFull!.hidden = !authorized;
     if (!authorized) {
-      if (guestHint) guestHint.textContent = hint || '访客视图 · 只显示忙碌 / 空闲';
+      if (guestHint) guestHint.textContent = hint || '访客视图';
       input!.value = '';
     }
   }
@@ -734,7 +736,7 @@ export function initApp(): void {
       }
     } else {
       name = '';
-      hint = `未找到「${value}」，只能查看忙碌 / 空闲`;
+      hint = `未找到「${value}」`;
     }
 
     formOpen = false;

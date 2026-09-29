@@ -63,13 +63,6 @@ const appData = JSON.stringify({
             <h1 class="truncate text-lg font-semibold tracking-tight text-slate-900 sm:text-xl lg:text-2xl">
               Personal Schedule
             </h1>
-            <p class="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-[11px] text-slate-500 sm:text-sm">
-              <span>
-                今天是 <span id="today-line" class="font-medium text-slate-700">{formatDateLabel(today)}</span>
-                <span class="ml-1 text-slate-400">· 北京时间</span>
-              </span>
-              <span id="guest-hint" class="text-slate-400">访客视图 · 只显示忙碌 / 空闲</span>
-            </p>
           </div>
 
           <!-- 右：控件 -->
@@ -202,6 +195,22 @@ const appData = JSON.stringify({
           </div>
         </div>
 
+        <!-- 信息栏：今天是… / 访客状态 / 最近可约（桌面一行，手机自动换行） -->
+        <div class="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <p class="flex flex-wrap items-baseline gap-x-2 text-[11px] text-slate-500 sm:text-sm">
+            <span>
+              今天是 <span id="today-line" class="font-medium text-slate-700">{formatDateLabel(today)}</span>
+              <span class="ml-1 text-slate-400">· 北京时间</span>
+            </span>
+            <span id="guest-hint" class="text-slate-400">访客视图</span>
+          </p>
+
+          <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] sm:text-xs">
+            <span class="shrink-0 font-semibold text-emerald-700">⏰ 最近可约</span>
+            <div id="next-free-list" class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"></div>
+          </div>
+        </div>
+
             <!-- 展开的输入框：占满 header 一整行 -->
             <form
               id="name-form"
@@ -241,20 +250,6 @@ const appData = JSON.stringify({
           </form>
       </header>
 
-
-      <!-- 最近可约：内容由浏览器端算（永远相对「现在」，不是相对正在看的日期） -->
-      <section
-        id="next-free"
-        class="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 shadow-sm"
-      >
-        <div class="flex items-baseline justify-between gap-2">
-          <span class="text-xs font-semibold text-emerald-800 sm:text-sm">⏰ 最近可约</span>
-          <span class="text-[11px] text-emerald-600/80">北京时间 · 按小时起约</span>
-        </div>
-        <div id="next-free-list" class="mt-1.5 space-y-1"></div>
-
-
-      </section>
 
 
 
