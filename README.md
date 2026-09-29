@@ -170,12 +170,17 @@ npm run import-ics      # 读 日历/*.ics → 重写 src/data/schedule.json
 `src/data/schedule.json`（GitHub Actions 靠这个文件构建）。所以流程是：
 
 ```bash
-# 1. 从 Apple 日历重新导出 .ics，放进 日历/
+# 1. 从 Apple 日历重新导出 .ics，覆盖 日历/辅导班.ics
 npm run import-ics          # 2. 重新生成 src/data/schedule.json
 git add .
 git commit -m "update schedule"
 git push                    # 3. 只有 JSON 会被推上去
 ```
+
+> ⚠️ **导出时一定要用同一个文件名覆盖**（`日历/辅导班.ics`）。
+> 如果导出成了 `辅导班 2.ics` 之类的新名字，「日历」文件夹里就会同时存在**两个日历文件**，
+> 于是导入脚本会认为你是"多日历"，给**全部条目**都加上 `type` 字段 —— 一次改动 300+ 行，
+> 虽然功能没问题，但 diff 会很难看。多出来的文件记得删掉。
 
 导入脚本做了什么：
 
