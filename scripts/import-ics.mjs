@@ -304,6 +304,17 @@ function main() {
     return true;
   });
 
+  // 保险：导出坏了 / 导错日历（例如导出一个空日历）时，别把现有日程清空
+  const previous = existsSync(OUT_FILE) ? JSON.parse(readFileSync(OUT_FILE, 'utf8')) : [];
+  if (unique.length === 0 && previous.length > 0) {
+    console.error(`✗ 这次一条日程都没解析出来，但现有 schedule.json 里还有 ${previous.length} 条。`);
+    console.error('  为了保护数据，**没有**覆盖文件。检查一下「日历」文件夹里的 .ics 是不是导错了或损坏了。');
+    process.exit(1);
+  }
+  if (previous.length > 0 && unique.length < previous.length * 0.5) {
+    console.log(`\n⚠️  日程从 ${previous.length} 条掉到 ${unique.length} 条（少了一半以上），确认一下是不是你要的结果。`);
+  }
+
   writeFileSync(OUT_FILE, JSON.stringify(unique, null, 2) + '\n', 'utf8');
 
   // ---- 报告 ----
