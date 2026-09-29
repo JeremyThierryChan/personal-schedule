@@ -52,17 +52,195 @@ const appData = JSON.stringify({
 
   <body class="min-h-screen">
     <!-- 手机 / 平板：居中窄栏；桌面（lg 以上）：铺满整个屏幕宽度 -->
-    <main class="mx-auto w-full max-w-2xl px-4 py-10 sm:py-16 lg:max-w-none lg:px-8 xl:px-12">
-      <!-- 标题 -->
-      <header class="mb-6 flex flex-wrap items-end justify-between gap-2 lg:mb-8">
-        <div>
-          <h1 class="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Personal Schedule</h1>
-          <p class="mt-1 text-sm text-slate-500">
-            今天是 <span id="today-line" class="font-medium text-slate-700">{formatDateLabel(today)}</span>
-            <span class="ml-1 text-slate-400">· 北京时间</span>
-          </p>
+    <main class="mx-auto w-full max-w-2xl px-4 pb-10 pt-3 sm:pb-16 sm:pt-4 lg:max-w-none lg:px-8 xl:px-12">
+      <!-- 顶部工具栏：标题 + 视图切换 + 姓名 + 预约。吸顶，滚时间轴时控件不会跑掉 -->
+      <header
+        class="sticky top-0 z-30 -mx-4 mb-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur lg:-mx-8 lg:px-8 xl:-mx-12"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <!-- 左：标题 -->
+          <div class="min-w-0">
+            <h1 class="truncate text-lg font-semibold tracking-tight text-slate-900 sm:text-xl lg:text-2xl">
+              Personal Schedule
+            </h1>
+            <p class="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-[11px] text-slate-500 sm:text-sm">
+              <span>
+                今天是 <span id="today-line" class="font-medium text-slate-700">{formatDateLabel(today)}</span>
+                <span class="ml-1 text-slate-400">· 北京时间</span>
+              </span>
+              <span id="guest-hint" class="text-slate-400">访客视图 · 只显示忙碌 / 空闲</span>
+            </p>
+          </div>
+
+          <!-- 右：控件 -->
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- 视图切换 -->
+            <div class="inline-flex rounded-xl bg-slate-100 p-1">
+              <button data-view="day" type="button" class="rounded-lg px-3 py-1.5 text-sm font-medium">日</button>
+              <button data-view="week" type="button" class="rounded-lg px-3 py-1.5 text-sm font-medium">周</button>
+              <button data-view="month" type="button" class="rounded-lg px-3 py-1.5 text-sm font-medium">月</button>
+            </div>
+
+                <div id="auth-guest" class="shrink-0">
+                  <button
+                    id="auth-toggle"
+                    type="button"
+                    class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 transition-colors hover:bg-slate-100 sm:text-sm"
+                  >
+                    🔒 <span class="hidden sm:inline">输入姓名</span><span class="sm:hidden">姓名</span>
+                  </button>
+                </div>
+
+                        <!-- 预约我的时间：toolbar 里的小按钮，面板浮在下面（原生 <details>） -->
+                        <details id="booking" class="group relative shrink-0">
+                          <summary
+                            class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 [&::-webkit-details-marker]:hidden sm:text-sm"
+                          >
+                            <span>
+                              📅 <span class="hidden sm:inline">{contact.heading}</span><span class="sm:hidden">预约</span>
+                            </span>
+                            <span class="text-emerald-100">
+                              <span class="group-open:hidden">▾</span>
+                              <span class="hidden group-open:inline">▴</span>
+                            </span>
+                          </summary>
+
+                            <div class="absolute right-0 top-full z-40 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 shadow-lg">
+                          {contact.intro && <p class="text-sm text-slate-600">{contact.intro}</p>}
+
+                          <!-- 联系方式 -->
+                          <div class="mt-3 divide-y divide-slate-100 border-y border-slate-100">
+                            {
+                              contact.phone && (
+                                <div class="flex items-center justify-between gap-3 py-2.5">
+                                  <div class="min-w-0">
+                                    <div class="text-xs text-slate-400">电话</div>
+                                    <a
+                                      href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`}
+                                      class="font-mono text-sm font-medium text-slate-900 tabular-nums underline decoration-dotted underline-offset-4"
+                                    >
+                                      {contact.phone}
+                                    </a>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    data-copy={contact.phone}
+                                    class="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-slate-100"
+                                  >
+                                    复制
+                                  </button>
+                                </div>
+                              )
+                            }
+                            {
+                              contact.wechat && (
+                                <div class="flex items-center justify-between gap-3 py-2.5">
+                                  <div class="min-w-0">
+                                    <div class="text-xs text-slate-400">微信</div>
+                                    <div class="truncate font-mono text-sm font-medium text-slate-900">{contact.wechat}</div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    data-copy={contact.wechat}
+                                    class="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-slate-100"
+                                  >
+                                    复制
+                                  </button>
+                                </div>
+                              )
+                            }
+                          </div>
+
+                          {
+                            contact.wechatQr && (
+                              <div class="mt-3 flex items-center gap-3">
+                                <img
+                                  src={contact.wechatQr}
+                                  alt="微信二维码"
+                                  class="h-28 w-28 shrink-0 rounded-lg border border-slate-200 object-contain"
+                                />
+                                <p class="text-xs text-slate-400">扫码加我微信</p>
+                              </div>
+                            )
+                          }
+
+                          <!-- 时段价格 -->
+                          {
+                            hasPrices && (
+                              <div class="mt-4">
+                                <div class="text-xs font-medium text-slate-500">时段价格</div>
+                                <div class="mt-1 divide-y divide-slate-100">
+                                  {contact.prices.map((item) => (
+                                    <div class="flex items-baseline justify-between gap-3 py-2">
+                                      <span class="text-sm text-slate-600">{item.label}</span>
+                                      <span class="shrink-0 text-sm font-semibold text-slate-900 tabular-nums">{item.price}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          }
+
+                          {contact.note && <p class="mt-3 text-xs leading-relaxed text-slate-400">{contact.note}</p>}
+                        </div>
+                      </details>
+
+                <div
+                  id="auth-full"
+                  hidden
+                  class="flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1.5 ring-1 ring-emerald-200"
+                >
+                  <span class="text-xs font-medium text-emerald-700 sm:text-sm">✓ <span class="hidden sm:inline">已授权 · 可以看到具体日程</span><span class="sm:hidden">已授权</span></span>
+                  <button
+                    id="auth-exit"
+                    type="button"
+                    class="rounded px-1.5 py-0.5 text-xs text-emerald-700 transition-colors hover:bg-emerald-100"
+                  >
+                    退出
+                  </button>
+                </div>
+          </div>
         </div>
+
+            <!-- 展开的输入框：占满 header 一整行 -->
+            <form
+              id="name-form"
+              hidden
+              novalidate
+              class="mt-2 w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+            >
+            <label for="name-input" class="block text-xs font-medium text-slate-600">
+              输入姓名以查看具体日程
+            </label>
+            <div class="mt-2 flex flex-col gap-2 sm:flex-row">
+              <input
+                id="name-input"
+                name="name"
+                type="text"
+                autocomplete="name"
+                placeholder="例如：Alice"
+                class="w-full flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 focus:outline-none"
+              />
+              <div class="flex gap-2">
+                <button
+                  type="submit"
+                  class="flex-1 shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 focus:ring-2 focus:ring-slate-300 focus:outline-none"
+                >
+                  查看详细日程
+                </button>
+                <button
+                  id="auth-cancel"
+                  type="button"
+                  class="shrink-0 rounded-lg px-3 py-2 text-sm text-slate-500 transition-colors hover:bg-slate-100"
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+            <p id="name-error" hidden class="mt-2 text-xs text-rose-600"></p>
+          </form>
       </header>
+
 
       <!-- 最近可约：内容由浏览器端算（永远相对「现在」，不是相对正在看的日期） -->
       <section
@@ -75,197 +253,30 @@ const appData = JSON.stringify({
         </div>
         <div id="next-free-list" class="mt-1.5 space-y-1"></div>
 
-          <!-- 预约我的时间：原生 <details>，不需要 JS -->
-          <details id="booking" class="group mt-3 border-t border-emerald-200 pt-3">
-            <summary
-              class="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 [&::-webkit-details-marker]:hidden sm:text-sm"
-            >
-              <span>📅 {contact.heading}</span>
-              <span class="text-emerald-100">
-                <span class="group-open:hidden">▾</span>
-                <span class="hidden group-open:inline">▴</span>
-              </span>
-            </summary>
 
-            <div class="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-4">
-            {contact.intro && <p class="text-sm text-slate-600">{contact.intro}</p>}
-
-            <!-- 联系方式 -->
-            <div class="mt-3 divide-y divide-slate-100 border-y border-slate-100">
-              {
-                contact.phone && (
-                  <div class="flex items-center justify-between gap-3 py-2.5">
-                    <div class="min-w-0">
-                      <div class="text-xs text-slate-400">电话</div>
-                      <a
-                        href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`}
-                        class="font-mono text-sm font-medium text-slate-900 tabular-nums underline decoration-dotted underline-offset-4"
-                      >
-                        {contact.phone}
-                      </a>
-                    </div>
-                    <button
-                      type="button"
-                      data-copy={contact.phone}
-                      class="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-slate-100"
-                    >
-                      复制
-                    </button>
-                  </div>
-                )
-              }
-              {
-                contact.wechat && (
-                  <div class="flex items-center justify-between gap-3 py-2.5">
-                    <div class="min-w-0">
-                      <div class="text-xs text-slate-400">微信</div>
-                      <div class="truncate font-mono text-sm font-medium text-slate-900">{contact.wechat}</div>
-                    </div>
-                    <button
-                      type="button"
-                      data-copy={contact.wechat}
-                      class="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-slate-100"
-                    >
-                      复制
-                    </button>
-                  </div>
-                )
-              }
-            </div>
-
-            {
-              contact.wechatQr && (
-                <div class="mt-3 flex items-center gap-3">
-                  <img
-                    src={contact.wechatQr}
-                    alt="微信二维码"
-                    class="h-28 w-28 shrink-0 rounded-lg border border-slate-200 object-contain"
-                  />
-                  <p class="text-xs text-slate-400">扫码加我微信</p>
-                </div>
-              )
-            }
-
-            <!-- 时段价格 -->
-            {
-              hasPrices && (
-                <div class="mt-4">
-                  <div class="text-xs font-medium text-slate-500">时段价格</div>
-                  <div class="mt-1 divide-y divide-slate-100">
-                    {contact.prices.map((item) => (
-                      <div class="flex items-baseline justify-between gap-3 py-2">
-                        <span class="text-sm text-slate-600">{item.label}</span>
-                        <span class="shrink-0 text-sm font-semibold text-slate-900 tabular-nums">{item.price}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            }
-
-            {contact.note && <p class="mt-3 text-xs leading-relaxed text-slate-400">{contact.note}</p>}
-          </div>
-        </details>
       </section>
 
-      <!-- 姓名验证（可选）：默认只显示一个入口条，不挡着时间表 -->
-      <section class="mb-5">
-        <!-- 访客视图 -->
-        <div
-          id="auth-guest"
-          class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm"
-        >
-          <span id="guest-hint" class="text-xs text-slate-500">访客视图 · 只显示忙碌 / 空闲</span>
-          <button
-            id="auth-toggle"
-            type="button"
-            class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 transition-colors hover:bg-slate-100"
-          >
-            🔒 输入姓名
-          </button>
-        </div>
 
-        <!-- 展开的输入框 -->
-        <form
-          id="name-form"
-          hidden
-          novalidate
-          class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-        >
-          <label for="name-input" class="block text-xs font-medium text-slate-600">
-            输入姓名以查看具体日程
-          </label>
-          <div class="mt-2 flex flex-col gap-2 sm:flex-row">
-            <input
-              id="name-input"
-              name="name"
-              type="text"
-              autocomplete="name"
-              placeholder="例如：Alice"
-              class="w-full flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 focus:outline-none"
-            />
-            <div class="flex gap-2">
-              <button
-                type="submit"
-                class="flex-1 shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 focus:ring-2 focus:ring-slate-300 focus:outline-none"
-              >
-                查看详细日程
-              </button>
-              <button
-                id="auth-cancel"
-                type="button"
-                class="shrink-0 rounded-lg px-3 py-2 text-sm text-slate-500 transition-colors hover:bg-slate-100"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-          <p id="name-error" hidden class="mt-2 text-xs text-rose-600"></p>
-        </form>
-
-        <!-- 已授权 -->
-        <div
-          id="auth-full"
-          hidden
-          class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2"
-        >
-          <span class="text-xs font-medium text-emerald-700">✓ 已授权 · 可以看到具体日程</span>
-          <button
-            id="auth-exit"
-            type="button"
-            class="rounded-lg px-2.5 py-1 text-xs text-emerald-700 transition-colors hover:bg-emerald-100"
-          >
-            退出
-          </button>
-        </div>
-      </section>
 
 
       <!-- 时间表：打开页面就能看到 -->
       <section id="result">
-        <!-- 视图切换 -->
-        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div class="inline-flex rounded-xl bg-slate-100 p-1">
-            <button data-view="day" type="button" class="rounded-lg px-4 py-1.5 text-sm font-medium">日</button>
-            <button data-view="week" type="button" class="rounded-lg px-4 py-1.5 text-sm font-medium">周</button>
-            <button data-view="month" type="button" class="rounded-lg px-4 py-1.5 text-sm font-medium">月</button>
-          </div>
-          <!-- 颜色说明 -->
-          <div class="flex items-center gap-3 text-[11px] text-slate-500">
-            <span class="inline-flex items-center gap-1.5">
-              <span class="h-3 w-3 rounded bg-rose-100 ring-1 ring-rose-300"></span>忙碌
-            </span>
-            {
-              rest && (
-                <span class="inline-flex items-center gap-1.5">
-                  <span class="h-3 w-3 rounded bg-indigo-100 ring-1 ring-indigo-200" />休息
-                </span>
-              )
-            }
-            <span class="inline-flex items-center gap-1.5">
-              <span class="h-3 w-3 rounded bg-emerald-50 ring-1 ring-emerald-200"></span>空闲
-            </span>
-          </div>
+        <!-- 颜色说明 -->
+        <div class="mb-3 flex items-center gap-3 text-[11px] text-slate-500">
+          <span class="inline-flex items-center gap-1.5">
+            <span class="h-3 w-3 rounded bg-rose-100 ring-1 ring-rose-300"></span>忙碌
+          </span>
+          {
+            rest && (
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-3 w-3 rounded bg-indigo-100 ring-1 ring-indigo-200" />休息
+              </span>
+            )
+          }
+          <span class="inline-flex items-center gap-1.5">
+            <span class="h-3 w-3 rounded bg-emerald-50 ring-1 ring-emerald-200"></span>空闲
+          </span>
+          <span class="ml-auto text-[11px] text-slate-400">按北京时间</span>
         </div>
 
         <!-- 日期切换 -->

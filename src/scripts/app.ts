@@ -778,6 +778,17 @@ export function initApp(): void {
     renderContent();
   });
 
+  // 预约面板是浮层：点面板外面、或者按 Esc 就收起
+  const bookingBox = byId<HTMLDetailsElement>('booking');
+  if (bookingBox) {
+    document.addEventListener('click', (event) => {
+      if (bookingBox.open && !bookingBox.contains(event.target as Node)) bookingBox.open = false;
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && bookingBox.open) bookingBox.open = false;
+    });
+  }
+
   // 「预约我的时间」里的复制按钮（电话 / 微信号）
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
     button.addEventListener('click', async () => {
