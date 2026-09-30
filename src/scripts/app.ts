@@ -113,6 +113,17 @@ function make<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/** 方块底部的结束时间（单独抽出来，访客也会用到） */
+function endTime(end: string): HTMLElement {
+  const el = make(
+    'div',
+    'shrink-0 font-mono text-[9px] leading-none tabular-nums text-rose-600/90 sm:text-[10px]',
+    timeLabel(end),
+  );
+  el.dataset.timeEnd = '1';
+  return el;
+}
+
 /** 用百分比定位一个方块 */
 function place(el: HTMLElement, top: number, height: number, left?: number, width?: number): void {
   el.style.top = `${top}%`;
@@ -158,6 +169,15 @@ function renderBlock(block: PositionedBlock, authorized: boolean, mode: 'day' | 
   // hover 的原生 tooltip 给全量信息
   card.title = [time.replace('\u200B', ''), headline, summary, block.details].filter(Boolean).join(' · ');
 
+  // 开始时间：贴在方块顶部（方块上边缘就是这节课的开始时刻）
+  const startEl = make(
+    'div',
+    'shrink-0 font-mono text-[9px] leading-none tabular-nums text-rose-600/90 sm:text-[10px]',
+    timeLabel(block.start),
+  );
+  startEl.dataset.timeStart = '1';
+  card.appendChild(startEl);
+
   // 标题：自动换行，行数由 applyTitleClamps() 按方块真实高度补上省略号
   const title = make(
     'div',
@@ -169,16 +189,10 @@ function renderBlock(block: PositionedBlock, authorized: boolean, mode: 'day' | 
   title.dataset.title = '1';
   card.appendChild(title);
 
-  // 时间：不参与压缩，永远完整（窄列会自己换行）
-  const timeEl = make(
-    'div',
-    'shrink-0 break-words font-mono text-[9px] leading-tight tabular-nums text-rose-600/90 sm:text-[10px]',
-    time,
-  );
-  timeEl.dataset.time = '1';
-  card.appendChild(timeEl);
+  // 结束时间：贴在方块底部
+  card.appendChild(endTime(block.end));
 
-  // 访客：只有「忙碌 + 时间段」
+  // 访客：只有「忙碌 + 起止时间」
   if (!authorized) return card;
 
   if (summary) {
@@ -200,6 +214,25 @@ function renderBlock(block: PositionedBlock, authorized: boolean, mode: 'day' | 
     card.appendChild(details);
   }
   return card;
+}
+
+/**
+ * 「已经过去的时间」灰色遮罩的高度（百分比）。按北京时间算：
+ * - 过去的日子 → 整列
+ * - 今天 → 00:00 到现在（会被 range 夹住）
+ * - 将来的日子 → 0（不画遮罩）
+ *
+ * 抽成纯函数是为了能单测，顺便让每分钟的定时刷新能直接复用。
+ */
+export function pastHeightPercent(date: string, range: DayRange, now: Date = new Date()): number {
+  const today = beijingTodayKey(now);
+  if (date > today) return 0;
+  if (date < today) return timePercent(range.end, range);
+
+  const from = parseTime(range.start);
+  const to = parseTime(range.end);
+  const clamped = Math.min(Math.max(beijingMinutesOfDay(now), from), to);
+  return timePercent(formatTime(clamped), range);
 }
 
 /**
@@ -243,13 +276,15 @@ function applyTitleClamps(): void {
 
     const titleStyle = getComputedStyle(title);
     const lineHeight = resolveLineHeight(titleStyle.lineHeight, titleStyle.fontSize);
-    const time = card.querySelector<HTMLElement>('[data-time]');
+    // 顶部开始时间 + 底部结束时间：这两行永远不参与压缩
+    const startTime = card.querySelector<HTMLElement>('[data-time-start]');
+    const endTimeEl = card.querySelector<HTMLElement>('[data-time-end]');
     const secondaries = [...card.querySelectorAll<HTMLElement>('[data-secondary]')];
 
     // 复位，重新量
     title.style.display = '';
     for (const el of secondaries) el.style.display = '';
-    let used = time ? time.offsetHeight : 0;
+    let used = (startTime?.offsetHeight ?? 0) + (endTimeEl?.offsetHeight ?? 0);
 
     for (const el of secondaries) {
       // 只有「标题至少还能放一行」的时候才显示次要信息
@@ -444,7 +479,21 @@ function renderTimeGrid(
       col.appendChild(renderBlock(block, authorized, multi ? 'week' : 'day'));
     }
 
-    // 3) 今天：一条「现在」的红线（按北京时间算）
+    // 3) 已经过去的时间盖一层浅灰：过去 = 不可约，避免跟将来搞混
+    //    整天的方块按 0–24h 算，所以过去的那一天会整列变灰
+    const pastHeight = pastHeightPercent(d, range);
+    if (pastHeight > 0) {
+      const mask = make(
+        'div',
+        'pointer-events-none absolute inset-x-0 top-0 z-20 rounded-sm bg-slate-500/10',
+      );
+      mask.dataset.pastMask = '1';
+      mask.dataset.pastDate = d;
+      mask.style.height = `${pastHeight}%`;
+      col.appendChild(mask);
+    }
+
+    // 4) 今天：一条「现在」的红线（按北京时间算）
     if (isToday) {
       const pos = nowPosition(range);
       if (pos !== null) {
@@ -909,6 +958,10 @@ export function initApp(): void {
         el.style.display = '';
         el.style.top = `${pos}%`;
       }
+    }
+    // 灰色遮罩跟着长（今天的那一列）
+    for (const el of document.querySelectorAll<HTMLElement>('[data-past-mask]')) {
+      el.style.height = `${pastHeightPercent(el.dataset.pastDate ?? '', app.range)}%`;
     }
   }, 60_000);
 }
