@@ -113,6 +113,15 @@ function make<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/**
+ * 「已经过去」的斜纹纹理（叠加在浅灰底色上）。
+ *
+ * `repeating-linear-gradient` 画 45° 斜线：1px 细线 + 4px 间隔。
+ * 手机上每周一列只有 ~40px 宽，所以线要细、间隔要小才看得出是「斜纹」而不是「糊」。
+ * 透明度压得比较低，压在日程方块上时文字仍然读得清。
+ */
+const PAST_HATCH = 'repeating-linear-gradient(45deg, rgb(100 116 139 / 0.16) 0 1px, transparent 1px 5px)';
+
 /** 方块底部的结束时间（单独抽出来，访客也会用到） */
 function endTime(end: string): HTMLElement {
   const el = make(
@@ -479,7 +488,7 @@ function renderTimeGrid(
       col.appendChild(renderBlock(block, authorized, multi ? 'week' : 'day'));
     }
 
-    // 3) 已经过去的时间盖一层浅灰：过去 = 不可约，避免跟将来搞混
+    // 3) 已经过去的时间盖一层浅灰斜纹：过去 = 不可约，避免跟将来搞混
     //    整天的方块按 0–24h 算，所以过去的那一天会整列变灰
     const pastHeight = pastHeightPercent(d, range);
     if (pastHeight > 0) {
@@ -489,6 +498,7 @@ function renderTimeGrid(
       );
       mask.dataset.pastMask = '1';
       mask.dataset.pastDate = d;
+      mask.style.backgroundImage = PAST_HATCH;
       mask.style.height = `${pastHeight}%`;
       col.appendChild(mask);
     }
