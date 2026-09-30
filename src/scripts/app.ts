@@ -126,74 +126,149 @@ function place(el: HTMLElement, top: number, height: number, left?: number, widt
 /* ================= 日视图 / 周视图：时间轴网格 ================= */
 
 /**
+ * 时间段文本。中间插一个零宽空格：
+ * 手机上每周一列只有 ~40px，一整行「09:00–11:00」放不下，
+ * 有了它浏览器会在「09:00–」后面换行，而不是把时间截断掉。
+ */
+function timeText(start: string, end: string): string {
+  return `${timeLabel(start)}–\u200B${timeLabel(end)}`;
+}
+
+/**
  * 生成一个日程方块。
- * - 日视图：写得详细（活动名 + 时间 + 类型/地点 + 具体事项）
- * - 周视图：只写摘要（活动名 + 类型 · 地点）
- * - 访客：一律只写「忙碌」和时间段
+ *
+ * 布局优先级（从高到低）：
+ * 1. **时间行永远完整** —— 它是 `shrink-0`，空间不够时只挤标题，不挤时间
+ * 2. 标题自动换行，实在放不下才用省略号（行数由 applyTitleClamps() 按真实高度算）
+ * 3. 摘要 / 具体事项是次要信息，放不下就整行收起来
  */
 function renderBlock(block: PositionedBlock, authorized: boolean, mode: 'day' | 'week'): HTMLElement {
   const card = make(
     'div',
-    // 手机上列很窄，内边距收窄一点，让标题多显示一两个字
-    'absolute z-10 overflow-hidden rounded-md border border-rose-300 bg-rose-100 px-1 py-0.5 shadow-sm sm:px-1.5',
+    // flex-col 是为了让标题可以被压缩、时间行不被压缩
+    'absolute z-10 flex flex-col overflow-hidden rounded-md border border-rose-300 bg-rose-100 px-1 py-0.5 shadow-sm sm:px-1.5',
   );
   place(card, block.top, block.height, block.left, block.width);
   card.style.minHeight = '17px';
   card.dataset.block = '1';
 
-  const time = `${timeLabel(block.start)}–${timeLabel(block.end)}`;
+  const time = timeText(block.start, block.end);
   const summary = blockSummary(block);
   const headline = authorized && block.title ? block.title : '忙碌';
   // hover 的原生 tooltip 给全量信息
-  card.title = [time, headline, summary, block.details].filter(Boolean).join(' · ');
+  card.title = [time.replace('\u200B', ''), headline, summary, block.details].filter(Boolean).join(' · ');
 
-  card.appendChild(
-    make(
-      'div',
-      `truncate font-medium leading-tight text-rose-900 ${
-        mode === 'day' ? 'text-[11px] sm:text-sm' : 'text-[10px] sm:text-xs'
-      }`,
-      headline,
-    ),
+  // 标题：自动换行，行数由 applyTitleClamps() 按方块真实高度补上省略号
+  const title = make(
+    'div',
+    `min-h-0 flex-1 break-words font-medium leading-tight text-rose-900 line-clamp-3 ${
+      mode === 'day' ? 'text-[11px] sm:text-sm' : 'text-[10px] sm:text-xs'
+    }`,
+    headline,
   );
+  title.dataset.title = '1';
+  card.appendChild(title);
 
-  // 访客：只有时间段
-  if (!authorized) {
-    if (block.duration >= 60) {
-      card.appendChild(
-        make('div', 'truncate font-mono text-[9px] tabular-nums leading-tight text-rose-600/90 sm:text-[10px]', time),
-      );
-    }
-    return card;
-  }
+  // 时间：不参与压缩，永远完整（窄列会自己换行）
+  const timeEl = make(
+    'div',
+    'shrink-0 break-words font-mono text-[9px] leading-tight tabular-nums text-rose-600/90 sm:text-[10px]',
+    time,
+  );
+  timeEl.dataset.time = '1';
+  card.appendChild(timeEl);
 
-  // 周视图：只写摘要（类型 · 地点），没有摘要就退回时间段
-  if (mode === 'week') {
-    if (block.duration >= 60) {
-      card.appendChild(
-        make('div', 'truncate text-[9px] leading-tight text-rose-600/90 sm:text-[10px]', summary || time),
-      );
-    }
-    return card;
-  }
+  // 访客：只有「忙碌 + 时间段」
+  if (!authorized) return card;
 
-  // 日视图：活动名 + 时间 + 类型/地点 + 具体事项
-  // （1 小时 ≈ 桌面 46px，正好放得下标题 + 一行小字；更短的就只写标题，免得被裁）
-  if (block.duration >= 60) {
-    card.appendChild(
-      make(
-        'div',
-        'truncate text-[9px] leading-tight text-rose-600/90 sm:text-[11px]',
-        [time, summary].filter(Boolean).join(' · '),
-      ),
+  if (summary) {
+    const meta = make(
+      'div',
+      'shrink-0 break-words text-[9px] leading-tight text-rose-600/90 line-clamp-2 sm:text-[10px]',
+      summary,
     );
+    meta.dataset.secondary = '1';
+    card.appendChild(meta);
   }
-  if (block.details && block.duration >= 90) {
-    card.appendChild(
-      make('div', 'mt-0.5 line-clamp-2 text-[9px] leading-snug text-rose-800/80 sm:text-[11px]', block.details),
+  if (mode === 'day' && block.details) {
+    const details = make(
+      'div',
+      'shrink-0 break-words text-[9px] leading-snug text-rose-800/80 line-clamp-2 sm:text-[11px]',
+      block.details,
     );
+    details.dataset.secondary = '1';
+    card.appendChild(details);
   }
   return card;
+}
+
+/**
+ * 解析行高（px）。
+ * 浏览器给的一般已经是 px；`leading-tight` 是倍数，
+ * 万一拿到的是倍数（< 4）就乘上字号，避免算成 1.25px 导致行数暴增。
+ */
+export function resolveLineHeight(lineHeight: string, fontSize: string): number {
+  const size = parseFloat(fontSize) || 14;
+  const value = parseFloat(lineHeight);
+  if (!Number.isFinite(value) || value <= 0) return size * 1.25;
+  return value < 4 ? value * size : value;
+}
+
+/**
+ * 按可用高度算标题能放几行（至少 1 行）。
+ * 抽成纯函数是为了能单独测：真实高度在 jsdom 里量不出来。
+ */
+export function clampLines(inner: number, used: number, lineHeight: number): number {
+  if (lineHeight <= 0) return 1;
+  return Math.max(1, Math.floor((inner - used) / lineHeight));
+}
+
+/**
+ * 按方块**真实渲染高度**给标题算能放几行。
+ *
+ * 因为方块高度是百分比、随窗口变化，写死 `line-clamp-2` 要么太早省略、
+ * 要么文字被硬裁。这里在渲染完、布局好之后量一次：
+ *   可用高度 = 方块内高 − 时间行 −（放得下的）次要信息
+ * 放不下次要信息就把它整行收起来，优先保证标题至少有一行 + 时间完整。
+ */
+function applyTitleClamps(): void {
+  for (const title of document.querySelectorAll<HTMLElement>('[data-title]')) {
+    const card = title.closest<HTMLElement>('[data-block]');
+    if (!card) continue;
+
+    const style = getComputedStyle(card);
+    const inner =
+      card.clientHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
+    if (inner <= 0) continue; // 还没布局（或拿不到尺寸），保留默认的 line-clamp-3
+
+    const titleStyle = getComputedStyle(title);
+    const lineHeight = resolveLineHeight(titleStyle.lineHeight, titleStyle.fontSize);
+    const time = card.querySelector<HTMLElement>('[data-time]');
+    const secondaries = [...card.querySelectorAll<HTMLElement>('[data-secondary]')];
+
+    // 复位，重新量
+    title.style.display = '';
+    for (const el of secondaries) el.style.display = '';
+    let used = time ? time.offsetHeight : 0;
+
+    for (const el of secondaries) {
+      // 只有「标题至少还能放一行」的时候才显示次要信息
+      if (inner - used - el.offsetHeight >= lineHeight) {
+        used += el.offsetHeight;
+      } else {
+        el.style.display = 'none';
+      }
+    }
+
+    // 方块太矮（例如 30 分钟）就只留时间：与其露出一行被切一半的标题，不如干净地只显示时间
+    const room = inner - used;
+    if (room < lineHeight * 0.9) {
+      title.style.display = 'none';
+      continue;
+    }
+
+    title.style.webkitLineClamp = String(clampLines(inner, used, lineHeight));
+  }
 }
 
 /**
@@ -303,7 +378,7 @@ function renderTimeGrid(
 
       const restBox = make(
         'div',
-        'absolute inset-x-0.5 z-0 overflow-hidden rounded-md bg-indigo-100/70 ring-1 ring-indigo-200/70',
+        'absolute inset-x-0.5 z-0 flex flex-col overflow-hidden rounded-md bg-indigo-100/70 ring-1 ring-indigo-200/70',
       );
       restBox.dataset.rest = '1';
       place(restBox, top, height);
@@ -311,18 +386,18 @@ function renderTimeGrid(
         restBox.appendChild(
           make(
             'div',
-            'truncate px-1 pt-0.5 text-[10px] font-medium text-indigo-500/90 sm:px-1.5',
+            'break-words px-1 pt-0.5 text-[10px] font-medium leading-tight text-indigo-500/90 line-clamp-2 sm:px-1.5',
             `休息 ${formatDuration(minutes)}`,
           ),
         );
         if (height >= 6) {
-          restBox.appendChild(
-            make(
-              'div',
-              'truncate px-1.5 font-mono text-[9px] tabular-nums text-indigo-400/90 sm:text-[10px]',
-              `${timeLabel(slot.start)}–${timeLabel(slot.end)}`,
-            ),
+          const t = make(
+            'div',
+            'shrink-0 break-words px-1.5 font-mono text-[9px] leading-tight tabular-nums text-indigo-400/90 sm:text-[10px]',
+            timeText(slot.start, slot.end),
           );
+          t.dataset.time = '1';
+          restBox.appendChild(t);
         }
       }
       col.appendChild(restBox);
@@ -335,7 +410,7 @@ function renderTimeGrid(
 
       const freeBox = make(
         'div',
-        'absolute inset-x-0.5 z-0 overflow-hidden rounded-md bg-emerald-50 ring-1 ring-emerald-100',
+        'absolute inset-x-0.5 z-0 flex flex-col overflow-hidden rounded-md bg-emerald-50 ring-1 ring-emerald-100',
       );
       freeBox.dataset.free = '1';
       place(freeBox, top, height);
@@ -346,19 +421,19 @@ function renderTimeGrid(
         freeBox.appendChild(
           make(
             'div',
-            'truncate px-1 pt-0.5 text-[10px] font-medium text-emerald-700/90 sm:px-1.5',
+            'break-words px-1 pt-0.5 text-[10px] font-medium leading-tight text-emerald-700/90 line-clamp-2 sm:px-1.5',
             `空闲 ${formatDuration(minutes)}`,
           ),
         );
         // 够高的话把具体时间段也写上（6% ≈ 手机上 43px，放得下两行）
         if (height >= 6) {
-          freeBox.appendChild(
-            make(
-              'div',
-              'truncate px-1.5 font-mono text-[9px] tabular-nums text-emerald-600/80 sm:text-[10px]',
-              `${timeLabel(slot.start)}–${timeLabel(slot.end)}`,
-            ),
+          const t = make(
+            'div',
+            'shrink-0 break-words px-1.5 font-mono text-[9px] leading-tight tabular-nums text-emerald-600/80 sm:text-[10px]',
+            timeText(slot.start, slot.end),
           );
+          t.dataset.time = '1';
+          freeBox.appendChild(t);
         }
       }
       col.appendChild(freeBox);
@@ -515,6 +590,7 @@ export function initApp(): void {
         rest: app.rest,
       }),
     );
+    applyTitleClamps();
 
     const { free, rest: restSlots } = splitSlots(buildTimeline(app.schedule, date, app.range, app.rest));
     const total = (slots: { start: string; end: string }[]) =>
@@ -543,6 +619,7 @@ export function initApp(): void {
         rest: app.rest,
       }),
     );
+    applyTitleClamps();
   }
 
   function renderMonth(): void {
@@ -778,6 +855,13 @@ export function initApp(): void {
   todayButton?.addEventListener('click', () => {
     date = today;
     renderContent();
+  });
+
+  // 窗口尺寸一变（跨断点 / 手机横竖屏），网格高度跟着变，标题能放几行也要重算
+  let clampTimer = 0;
+  window.addEventListener('resize', () => {
+    window.clearTimeout(clampTimer);
+    clampTimer = window.setTimeout(applyTitleClamps, 120);
   });
 
   // 预约面板是浮层：点面板外面、或者按 Esc 就收起
