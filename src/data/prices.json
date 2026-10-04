@@ -1,0 +1,15 @@
+{
+  "_note": "课时价格，仅作存档 —— 网页上不显示（价格区统一写「与我联系」）。见 README「价格存档」一节。",
+  "items": [
+    { "student": "苏琳", "subject": "高中化学", "org": "沐阳教育", "price": "240/次" },
+    { "student": "胡信好", "subject": "高中英语", "org": "沐阳教育", "price": "240/次" },
+    { "student": "王滨淇", "subject": "物理必修二", "org": "全慧文苑", "price": "300/次" },
+    { "student": "倪芮诗", "subject": "九年级上数学", "org": "全慧文苑", "price": "200/次" },
+    { "student": "刘其朔", "subject": "九年级上英语", "org": "全慧文苑", "price": "200/次" },
+    { "student": "邱星李", "subject": "高一化学/物理", "org": "三中胜利教育", "price": "240/次" },
+    { "student": "林松涵/蓝得鋆", "subject": "高一数学", "org": "全慧文苑", "price": "350/次" },
+    { "student": "石头", "subject": "三年级英语", "org": "自己家", "price": "300/次" },
+    { "student": "宋灵欣", "subject": "九年级数学", "org": "全慧文苑", "price": "150/次" },
+    { "student": "晚托", "subject": "全科", "org": "全慧文苑", "price": "100/次" }
+  ]
+}
